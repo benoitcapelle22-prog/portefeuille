@@ -943,7 +943,7 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       Importer
     </Button>
 
-      <Button variant="destructive" onClick={handleResetDatabase}>
+      <Button variant="destructive" onClick={handleResetDatabase} disabled>
     Réinitialiser
   </Button>
 
