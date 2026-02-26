@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getSetting, setSetting } from "../db";
 
 interface ExchangeRates {
   EUR: number;
@@ -30,6 +31,15 @@ export function useExchangeRates() {
       try {
         setIsLoading(true);
         setError(null);
+        
+        const cached = await getSetting('exchangeRates');
+if (cached) {
+  try {
+    const { rates: cachedRates, timestamp } = JSON.parse(cached);
+    setRates(cachedRates);
+    setLastUpdate(new Date(timestamp));
+  } catch {}
+}
 
         // Utiliser l'API ExchangeRate-API (gratuite, sans clé API)
         // Base: EUR, donc on récupère les taux de conversion vers EUR
@@ -55,8 +65,8 @@ export function useExchangeRates() {
         setRates(fetchedRates);
         setLastUpdate(new Date());
         
-        // Stocker dans localStorage pour utilisation hors ligne
-        localStorage.setItem('exchangeRates', JSON.stringify({
+        // Stocker dans IndexedDB (Dexie settings) pour utilisation hors ligne
+        await setSetting('exchangeRates', JSON.stringify({
           rates: fetchedRates,
           timestamp: new Date().toISOString(),
         }));
@@ -64,8 +74,8 @@ export function useExchangeRates() {
         console.error('Erreur lors de la récupération des taux de change:', err);
         setError(err instanceof Error ? err.message : 'Erreur inconnue');
         
-        // Essayer de récupérer les derniers taux depuis localStorage
-        const cached = localStorage.getItem('exchangeRates');
+        // Essayer de récupérer les derniers taux depuis IndexedDB (Dexie settings)
+        const cached = await getSetting('exchangeRates');
         if (cached) {
           try {
             const { rates: cachedRates, timestamp } = JSON.parse(cached);
