@@ -150,3 +150,15 @@ export async function getCurrentPortfolioId(): Promise<string | null> {
 export async function setCurrentPortfolioId(portfolioId: string): Promise<void> {
   await db.settings.put({ key: 'currentPortfolioId', value: portfolioId });
 }
+// =========================
+// SETTINGS HELPERS
+// =========================
+
+export async function getSetting(key: string): Promise<string | null> {
+  const setting = await db.settings.get(key);
+  return setting ? setting.value : null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  await db.settings.put({ key, value });
+}
