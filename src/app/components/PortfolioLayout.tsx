@@ -526,6 +526,8 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       saleDate: transaction.date,
       quantity: transaction.quantity,
       pru: existingPosition.pru,
+      totalPurchase,
+      totalSale, 
       averageSalePrice,
       gainLoss,
       gainLossPercent,
@@ -662,6 +664,8 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
               saleDate: transaction.date,
               quantity: transaction.quantity,
               pru: existingPosition.pru,
+              totalPurchase,
+              totalSale,
               averageSalePrice,
               gainLoss,
               gainLossPercent,
@@ -942,7 +946,7 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       <Button variant="destructive" onClick={handleResetDatabase}>
     Réinitialiser
   </Button>
-  
+
   </div>
 </div>
 
