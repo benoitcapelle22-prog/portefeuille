@@ -65,6 +65,45 @@ export function PortfolioLayout() {
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const ok = window.confirm(
+    "⚠️ Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?"
+  );
+
+  if (!ok) {
+    e.target.value = "";
+    return;
+  }
+
+  try {
+    const text = await file.text();
+
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      alert("❌ Fichier invalide : ce n’est pas un JSON valide.");
+      e.target.value = "";
+      return;
+    }
+
+    await importDatabase(data);
+
+    alert("✅ Import terminé !");
+    window.location.reload();
+  } catch (err) {
+    console.error(err);
+    alert(
+      "❌ Import impossible.\nLe fichier ne correspond pas à un export valide de l’application."
+    );
+  } finally {
+    e.target.value = "";
+  }
+};
+
   // Charger les données depuis IndexedDB avec Dexie
   const portfolios = useLiveQuery(() => db.portfolios.toArray(), []);
   const allTransactions = useLiveQuery(() => db.transactions.toArray(), []);
@@ -870,23 +909,8 @@ export function PortfolioLayout() {
       type="file"
       accept="application/json"
       style={{ display: "none" }}
-      onChange={async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const ok = confirm(
-          "Importer ce fichier va remplacer toutes les données actuelles. Continuer ?"
-        );
-        if (!ok) {
-          e.target.value = "";
-          return;
-        }
-
-        await importDatabase(file);
-        alert("Import terminé ✅");
-        e.target.value = "";
-      }}
-    />
+      onChange={handleImport}
+      />
 
     <Button variant="outline" onClick={exportDatabase}>
       Exporter

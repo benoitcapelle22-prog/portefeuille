@@ -1,5 +1,10 @@
-// fonction EXPORT
+// backup.ts
+
 import { db } from "../db";
+
+/* =========================
+   EXPORT DATABASE
+========================= */
 
 export async function exportDatabase() {
   const data = {
@@ -9,6 +14,7 @@ export async function exportDatabase() {
     closedPositions: await db.closedPositions.toArray(),
     settings: await db.settings.toArray(),
     exportDate: new Date().toISOString(),
+    appVersion: "1.0.0",
   };
 
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -23,31 +29,56 @@ export async function exportDatabase() {
   URL.revokeObjectURL(url);
 }
 
+/* =========================
+   VALIDATION BACKUP
+========================= */
 
-// fonction IMPORT
-export async function importDatabase(file: File) {
-  const text = await file.text();
-  const data = JSON.parse(text);
-
-  await db.transaction(
-    "rw",
-    db.portfolios,
-    db.transactions,
-    db.positions,
-    db.closedPositions,
-    db.settings,
-    async () => {
-      await db.portfolios.clear();
-      await db.transactions.clear();
-      await db.positions.clear();
-      await db.closedPositions.clear();
-      await db.settings.clear();
-
-      await db.portfolios.bulkAdd(data.portfolios || []);
-      await db.transactions.bulkAdd(data.transactions || []);
-      await db.positions.bulkAdd(data.positions || []);
-      await db.closedPositions.bulkAdd(data.closedPositions || []);
-      await db.settings.bulkAdd(data.settings || []);
-    }
+function isValidBackup(data: any) {
+  return (
+    data &&
+    typeof data === "object" &&
+    Array.isArray(data.portfolios) &&
+    Array.isArray(data.transactions) &&
+    Array.isArray(data.positions) &&
+    Array.isArray(data.closedPositions) &&
+    Array.isArray(data.settings)
   );
+}
+
+/* =========================
+   IMPORT DATABASE (SECURISÉ)
+========================= */
+
+export async function importDatabase(data: any) {
+  // 🔴 Vérification structure
+  if (!isValidBackup(data)) {
+    throw new Error(
+      "Fichier incompatible : structure invalide (données manquantes)."
+    );
+  }
+
+  // 🔴 Vérification minimale
+  if (data.portfolios.length === 0) {
+    throw new Error(
+      "Fichier invalide : aucun portefeuille trouvé dans le backup."
+    );
+  }
+
+  try {
+    await db.transaction("rw", db.tables, async () => {
+      // 1️⃣ Tout vider
+      await Promise.all(db.tables.map((table) => table.clear()));
+
+      // 2️⃣ Réinsérer les données
+      await db.portfolios.bulkAdd(data.portfolios);
+      await db.transactions.bulkAdd(data.transactions);
+      await db.positions.bulkAdd(data.positions);
+      await db.closedPositions.bulkAdd(data.closedPositions);
+      await db.settings.bulkAdd(data.settings);
+    });
+  } catch (error) {
+    throw new Error(
+      "Import échoué : erreur lors de l'écriture dans la base locale."
+    );
+  }
 }
