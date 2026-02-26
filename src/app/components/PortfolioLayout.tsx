@@ -9,6 +9,8 @@ import { TrendingUp, LayoutDashboard, Receipt, Calculator } from "lucide-react";
 import { Button } from "./ui/button";
 import { db, migrateFromLocalStorage, getCurrentPortfolioId, setCurrentPortfolioId as saveCurrentPortfolioId, DBTransaction, DBPosition, DBClosedPosition } from "../db";
 import { useLiveQuery } from "dexie-react-hooks";
+import { exportDatabase, importDatabase } from "../utils/backup";
+import { useRef } from "react";
 
 export interface PortfolioData {
   transactions: Transaction[];
@@ -61,6 +63,7 @@ export function PortfolioLayout() {
     portfolioId?: string; // Ajouter l'ID du portefeuille
   }>({});
   const [isLoading, setIsLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Charger les données depuis IndexedDB avec Dexie
   const portfolios = useLiveQuery(() => db.portfolios.toArray(), []);
@@ -824,36 +827,77 @@ export function PortfolioLayout() {
             onSelectPortfolio={setCurrentPortfolioId}
           />
 
-          {/* Navigation */}
-          <div className="flex gap-2 border-b pb-2">
-            <Link to="/">
-              <Button
-                variant={location.pathname === "/" ? "default" : "ghost"}
-                className="gap-2"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                Tableau de bord
-              </Button>
-            </Link>
-            <Link to="/transactions">
-              <Button
-                variant={location.pathname === "/transactions" ? "default" : "ghost"}
-                className="gap-2"
-              >
-                <Receipt className="h-4 w-4" />
-                Transactions
-              </Button>
-            </Link>
-            <Link to="/calculator">
-              <Button
-                variant={location.pathname === "/calculator" ? "default" : "ghost"}
-                className="gap-2"
-              >
-                <Calculator className="h-4 w-4" />
-                Calculatrice
-              </Button>
-            </Link>
-          </div>
+{/* Navigation + Backup */}
+<div className="flex justify-between items-center border-b pb-2">
+  
+  {/* Navigation à gauche */}
+  <div className="flex gap-2">
+    <Link to="/">
+      <Button
+        variant={location.pathname === "/" ? "default" : "ghost"}
+        className="gap-2"
+      >
+        <LayoutDashboard className="h-4 w-4" />
+        Tableau de bord
+      </Button>
+    </Link>
+
+    <Link to="/transactions">
+      <Button
+        variant={location.pathname === "/transactions" ? "default" : "ghost"}
+        className="gap-2"
+      >
+        <Receipt className="h-4 w-4" />
+        Transactions
+      </Button>
+    </Link>
+
+    <Link to="/calculator">
+      <Button
+        variant={location.pathname === "/calculator" ? "default" : "ghost"}
+        className="gap-2"
+      >
+        <Calculator className="h-4 w-4" />
+        Calculatrice
+      </Button>
+    </Link>
+  </div>
+
+  {/* Backup à droite */}
+  <div className="flex gap-2">
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept="application/json"
+      style={{ display: "none" }}
+      onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const ok = confirm(
+          "Importer ce fichier va remplacer toutes les données actuelles. Continuer ?"
+        );
+        if (!ok) {
+          e.target.value = "";
+          return;
+        }
+
+        await importDatabase(file);
+        alert("Import terminé ✅");
+        e.target.value = "";
+      }}
+    />
+
+    <Button variant="outline" onClick={exportDatabase}>
+      Exporter
+    </Button>
+
+    <Button onClick={() => fileInputRef.current?.click()}>
+      Importer
+    </Button>
+  </div>
+</div>
+
 
           {/* Contenu des pages */}
           <Outlet />
