@@ -65,6 +65,25 @@ export function PortfolioLayout() {
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+const handleResetDatabase = async () => {
+  const ok = window.confirm(
+    "⚠️ Cette action va supprimer définitivement toutes les données (portefeuilles, transactions, positions, paramètres).\n\nContinuer ?"
+  );
+  if (!ok) return;
+
+  try {
+    await db.transaction("rw", db.tables, async () => {
+      await Promise.all(db.tables.map((t) => t.clear()));
+    });
+
+    alert("✅ Base vidée. L’application va se recharger.");
+    window.location.reload();
+  } catch (err) {
+    console.error(err);
+    alert("❌ Impossible de vider la base.");
+  }
+};
+
 const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (!file) return;
@@ -919,6 +938,11 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     <Button onClick={() => fileInputRef.current?.click()}>
       Importer
     </Button>
+
+      <Button variant="destructive" onClick={handleResetDatabase}>
+    Réinitialiser
+  </Button>
+  
   </div>
 </div>
 
