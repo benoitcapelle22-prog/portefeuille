@@ -1,10 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Trash2, Search, X } from "lucide-react";
+import { Trash2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 
 interface TransactionHistoryProps {
@@ -13,10 +13,15 @@ interface TransactionHistoryProps {
   portfolioCurrency?: string;
 }
 
+type SortKey = "date" | "code" | "name" | "type" | "quantity" | "unitPrice" | "currency" | "conversionRate" | "fees" | "tff" | "total";
+type SortDir = "asc" | "desc" | null;
+
 export function TransactionHistory({ transactions, onDeleteTransaction, portfolioCurrency = 'EUR' }: TransactionHistoryProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const formatCurrency = (value: number, currency?: string) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -29,22 +34,73 @@ export function TransactionHistory({ transactions, onDeleteTransaction, portfoli
     return new Date(dateStr).toLocaleDateString('fr-FR');
   };
 
-  const sortedTransactions = [...transactions].sort((a, b) => 
-    new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  const getTotal = (transaction: Transaction) => {
+    if (transaction.type === "vente") {
+      return transaction.quantity * transaction.unitPrice - transaction.fees;
+    }
+    return transaction.quantity * transaction.unitPrice + transaction.fees + transaction.tff;
+  };
 
-  // Filtrer les transactions
-  const filteredTransactions = sortedTransactions.filter(transaction => {
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      // Cycle: asc → desc → null (retour tri date desc par défaut)
+      if (sortDir === "asc") setSortDir("desc");
+      else if (sortDir === "desc") { setSortKey("date"); setSortDir("desc"); }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ChevronsUpDown className="inline h-3 w-3 ml-1 opacity-30" />;
+    if (sortDir === "asc") return <ChevronUp className="inline h-3 w-3 ml-1 text-primary" />;
+    return <ChevronDown className="inline h-3 w-3 ml-1 text-primary" />;
+  };
+
+  const thClass = "cursor-pointer select-none hover:text-foreground transition-colors";
+
+  // Filtrer
+  const filteredTransactions = transactions.filter(transaction => {
     const searchLower = searchFilter.toLowerCase();
-    const matchesSearch = searchFilter === "" || 
+    const matchesSearch = searchFilter === "" ||
       transaction.code.toLowerCase().includes(searchLower) ||
       transaction.name.toLowerCase().includes(searchLower);
-    
     const transDate = new Date(transaction.date);
     const matchesStartDate = !startDate || transDate >= new Date(startDate);
     const matchesEndDate = !endDate || transDate <= new Date(endDate);
-    
     return matchesSearch && matchesStartDate && matchesEndDate;
+  });
+
+  // Trier
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+    let valA: any;
+    let valB: any;
+
+    switch (sortKey) {
+      case "date":
+        valA = new Date(a.date).getTime();
+        valB = new Date(b.date).getTime();
+        break;
+      case "code": valA = a.code; valB = b.code; break;
+      case "name": valA = a.name; valB = b.name; break;
+      case "type": valA = a.type; valB = b.type; break;
+      case "quantity": valA = a.quantity; valB = b.quantity; break;
+      case "unitPrice": valA = a.unitPrice; valB = b.unitPrice; break;
+      case "currency": valA = a.currency; valB = b.currency; break;
+      case "conversionRate": valA = a.conversionRate; valB = b.conversionRate; break;
+      case "fees": valA = a.fees; valB = b.fees; break;
+      case "tff": valA = a.tff; valB = b.tff; break;
+      case "total": valA = getTotal(a); valB = getTotal(b); break;
+      default: valA = 0; valB = 0;
+    }
+
+    if (typeof valA === "string") {
+      return sortDir === "asc"
+        ? valA.localeCompare(valB, 'fr')
+        : valB.localeCompare(valA, 'fr');
+    }
+    return sortDir === "asc" ? valA - valB : valB - valA;
   });
 
   const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
@@ -57,26 +113,19 @@ export function TransactionHistory({ transactions, onDeleteTransaction, portfoli
 
   const getTypeBadge = (type: Transaction["type"]) => {
     switch (type) {
-      case "achat":
-        return <Badge variant="default">Achat</Badge>;
-      case "vente":
-        return <Badge variant="destructive">Vente</Badge>;
-      case "dividende":
-        return <Badge className="bg-green-600">Dividende</Badge>;
-      case "depot":
-        return <Badge className="bg-blue-600">Dépôt</Badge>;
-      case "retrait":
-        return <Badge className="bg-orange-600">Retrait</Badge>;
-      default:
-        return <Badge>{type}</Badge>;
+      case "achat": return <Badge variant="default">Achat</Badge>;
+      case "vente": return <Badge variant="destructive">Vente</Badge>;
+      case "dividende": return <Badge className="bg-green-600">Dividende</Badge>;
+      case "depot": return <Badge className="bg-blue-600">Dépôt</Badge>;
+      case "retrait": return <Badge className="bg-orange-600">Retrait</Badge>;
+      default: return <Badge>{type}</Badge>;
     }
   };
 
   return (
     <Card>
-      
       <CardContent>
-        {sortedTransactions.length === 0 ? (
+        {transactions.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">Aucun mouvement enregistré</p>
         ) : (
           <div className="space-y-4">
@@ -97,7 +146,6 @@ export function TransactionHistory({ transactions, onDeleteTransaction, portfoli
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  placeholder="Date de début"
                   className="w-40"
                 />
                 <span className="text-muted-foreground">-</span>
@@ -105,16 +153,11 @@ export function TransactionHistory({ transactions, onDeleteTransaction, portfoli
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  placeholder="Date de fin"
                   className="w-40"
                 />
               </div>
               {hasActiveFilters && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={resetFilters}
-                >
+                <Button variant="outline" size="sm" onClick={resetFilters}>
                   <X className="h-4 w-4 mr-1" />
                   Réinitialiser
                 </Button>
@@ -128,32 +171,45 @@ export function TransactionHistory({ transactions, onDeleteTransaction, portfoli
                     {transactions.some(t => t.portfolioCode) && (
                       <TableHead>Portefeuille</TableHead>
                     )}
-                    <TableHead>Date</TableHead>
-                    <TableHead>Code</TableHead>
-                    <TableHead>Nom</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Quantité</TableHead>
-                    <TableHead className="text-right">Prix unitaire</TableHead>
-                    <TableHead>Devise</TableHead>
-                    <TableHead className="text-right">Taux conversion</TableHead>
-                    <TableHead className="text-right">Frais</TableHead>
-                    <TableHead className="text-right">TFF</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className={thClass} onClick={() => handleSort("date")}>
+                      Date <SortIcon col="date" />
+                    </TableHead>
+                    <TableHead className={thClass} onClick={() => handleSort("code")}>
+                      Code <SortIcon col="code" />
+                    </TableHead>
+                    <TableHead className={thClass} onClick={() => handleSort("name")}>
+                      Nom <SortIcon col="name" />
+                    </TableHead>
+                    <TableHead className={thClass} onClick={() => handleSort("type")}>
+                      Type <SortIcon col="type" />
+                    </TableHead>
+                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("quantity")}>
+                      Quantité <SortIcon col="quantity" />
+                    </TableHead>
+                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("unitPrice")}>
+                      Prix unitaire <SortIcon col="unitPrice" />
+                    </TableHead>
+                    <TableHead className={thClass} onClick={() => handleSort("currency")}>
+                      Devise <SortIcon col="currency" />
+                    </TableHead>
+                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("conversionRate")}>
+                      Taux conversion <SortIcon col="conversionRate" />
+                    </TableHead>
+                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("fees")}>
+                      Frais <SortIcon col="fees" />
+                    </TableHead>
+                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("tff")}>
+                      TFF <SortIcon col="tff" />
+                    </TableHead>
+                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("total")}>
+                      Total <SortIcon col="total" />
+                    </TableHead>
                     {onDeleteTransaction && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTransactions.map((transaction) => {
-                    // Calcul du total selon le type de transaction
-                    let total: number;
-                    if (transaction.type === "vente") {
-                      // Pour une vente : montant reçu moins les frais (pas de TFF sur les ventes)
-                      total = transaction.quantity * transaction.unitPrice - transaction.fees;
-                    } else {
-                      // Pour un achat : montant payé plus les frais et TFF
-                      total = transaction.quantity * transaction.unitPrice + transaction.fees + transaction.tff;
-                    }
-                    
+                  {sortedTransactions.map((transaction) => {
+                    const total = getTotal(transaction);
                     const hasPortfolioCodeColumn = transactions.some(t => t.portfolioCode);
                     return (
                       <TableRow key={transaction.id}>
@@ -163,9 +219,7 @@ export function TransactionHistory({ transactions, onDeleteTransaction, portfoli
                         <TableCell>{formatDate(transaction.date)}</TableCell>
                         <TableCell className="font-medium">{transaction.code}</TableCell>
                         <TableCell>{transaction.name}</TableCell>
-                        <TableCell>
-                          {getTypeBadge(transaction.type)}
-                        </TableCell>
+                        <TableCell>{getTypeBadge(transaction.type)}</TableCell>
                         <TableCell className="text-right">{transaction.quantity}</TableCell>
                         <TableCell className="text-right">{formatCurrency(transaction.unitPrice)}</TableCell>
                         <TableCell>{transaction.currency}</TableCell>

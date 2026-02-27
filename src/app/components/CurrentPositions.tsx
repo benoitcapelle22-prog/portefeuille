@@ -6,7 +6,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
-import { MoreHorizontal, Search, X, Wallet, Plus, Minus, Eye, EyeOff } from "lucide-react";
+import { MoreHorizontal, Search, X, Wallet, Plus, Minus, Eye, EyeOff, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { Transaction } from "./TransactionForm";
 import { useExchangeRates } from "../hooks/useExchangeRates";
 import {
@@ -34,15 +34,18 @@ export interface Position {
   pru: number;
   currency?: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
   currentPrice?: number;
-  manualCurrentPrice?: number; // Prix saisi manuellement par l'utilisateur
+  manualCurrentPrice?: number;
   totalValue?: number;
   latentGainLoss?: number;
   latentGainLossPercent?: number;
   stopLoss?: number;
-  portfolioCode?: string; // Code du portefeuille d'origine (en vue consolidée)
-  portfolioId?: string; // ID du portefeuille d'origine (en vue consolidée)
-  sector?: string; // Secteur d'activité
+  portfolioCode?: string;
+  portfolioId?: string;
+  sector?: string;
 }
+
+type SortKey = "code" | "name" | "sector" | "currency" | "quantity" | "pru" | "currentPrice" | "totalCost" | "totalValue" | "latentGainLoss" | "latentGainLossPercent" | "stopLoss" | "risk" | "riskPercent";
+type SortDir = "asc" | "desc";
 
 interface CurrentPositionsProps {
   positions: Position[];
@@ -54,7 +57,7 @@ interface CurrentPositionsProps {
   portfolioCategory?: string;
   onUpdateStopLoss?: (code: string, stopLoss: number | undefined) => void;
   onUpdateCurrentPrice?: (code: string, manualCurrentPrice: number | undefined) => void;
-  portfolioId?: string; // ID du portefeuille actuel
+  portfolioId?: string;
 }
 
 export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onAction, transactions, cash = 0, onUpdateCash, portfolioCategory, onUpdateStopLoss, onUpdateCurrentPrice, portfolioId }: CurrentPositionsProps) {
@@ -65,46 +68,57 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<"deposit" | "withdrawal">("deposit");
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [showSector, setShowSector] = useState(false); // Affichage colonne secteur
-  
-  // Utiliser le hook pour récupérer les taux de change en temps réel
+  const [showSector, setShowSector] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("code");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
   const { rates, getConversionRate, lastUpdate, error } = useExchangeRates();
 
   useEffect(() => {
     const updatePrices = () => {
       const updatedPositions = positions.map((position) => {
-        // Utiliser uniquement le prix manuel saisi par l'utilisateur
         const effectivePrice = position.manualCurrentPrice;
-        
         if (effectivePrice) {
           const totalValue = position.quantity * effectivePrice;
           const latentGainLoss = totalValue - position.totalCost;
           const latentGainLossPercent = (latentGainLoss / position.totalCost) * 100;
-          
-          return {
-            ...position,
-            currentPrice: effectivePrice,
-            totalValue,
-            latentGainLoss,
-            latentGainLossPercent,
-          };
+          return { ...position, currentPrice: effectivePrice, totalValue, latentGainLoss, latentGainLossPercent };
         }
         return position;
       });
       setPositionsWithPrices(updatedPositions);
     };
-
-    if (positions.length > 0) {
-      updatePrices();
-    }
+    if (positions.length > 0) updatePrices();
   }, [positions]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ChevronsUpDown className="inline h-3 w-3 ml-1 text-muted-foreground" />;
+    return sortDir === "asc"
+      ? <ChevronUp className="inline h-3 w-3 ml-1" />
+      : <ChevronDown className="inline h-3 w-3 ml-1" />;
+  };
+
+  const Th = ({ col, children, className = "" }: { col: SortKey; children: React.ReactNode; className?: string }) => (
+    <TableHead
+      className={`cursor-pointer select-none hover:bg-muted/50 ${className}`}
+      onClick={() => handleSort(col)}
+    >
+      {children}<SortIcon col={col} />
+    </TableHead>
+  );
 
   const formatCurrency = (value?: number, currency?: string) => {
     if (value === undefined) return "-";
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: currency || portfolioCurrency
-    }).format(value);
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: currency || portfolioCurrency }).format(value);
   };
 
   const formatPercent = (value?: number) => {
@@ -112,73 +126,74 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   };
 
-  // Filtrer les positions
   const filteredPositions = positionsWithPrices.filter(position => {
     const searchLower = searchFilter.toLowerCase();
-    const matchesSearch = searchFilter === "" || 
+    const matchesSearch = searchFilter === "" ||
       position.code.toLowerCase().includes(searchLower) ||
       position.name.toLowerCase().includes(searchLower);
-    
-    // Vérifier les dates des transactions d'achat pour cette position
+
     let matchesDateRange = true;
     if (transactions && endDate) {
-      const positionPurchases = transactions.filter(
-        t => t.type === "achat" && t.code === position.code
-      );
-      
+      const positionPurchases = transactions.filter(t => t.type === "achat" && t.code === position.code);
       if (positionPurchases.length > 0) {
         matchesDateRange = positionPurchases.some(purchase => {
           const purchaseDate = new Date(purchase.date);
-          const matchesEnd = !endDate || purchaseDate <= new Date(endDate);
-          return matchesEnd;
+          return !endDate || purchaseDate <= new Date(endDate);
         });
       }
     }
-    
     return matchesSearch && matchesDateRange;
   });
 
-  const hasActiveFilters = searchFilter !== "" || endDate !== "";
+  const getRisk = (pos: Position) =>
+    pos.stopLoss !== undefined ? (pos.stopLoss - pos.pru) * pos.quantity : undefined;
+  const getRiskPercent = (pos: Position) =>
+    pos.stopLoss !== undefined && pos.pru > 0 ? ((pos.stopLoss - pos.pru) / pos.pru) * 100 : undefined;
 
-  const resetFilters = () => {
-    setSearchFilter("");
-    setEndDate("");
-  };
+  const sortedPositions = [...filteredPositions].sort((a, b) => {
+    let aVal: any, bVal: any;
+    switch (sortKey) {
+      case "code": aVal = a.code; bVal = b.code; break;
+      case "name": aVal = a.name; bVal = b.name; break;
+      case "sector": aVal = a.sector || ""; bVal = b.sector || ""; break;
+      case "currency": aVal = a.currency || ""; bVal = b.currency || ""; break;
+      case "quantity": aVal = a.quantity; bVal = b.quantity; break;
+      case "pru": aVal = a.pru; bVal = b.pru; break;
+      case "currentPrice": aVal = a.currentPrice ?? -Infinity; bVal = b.currentPrice ?? -Infinity; break;
+      case "totalCost": aVal = a.totalCost; bVal = b.totalCost; break;
+      case "totalValue": aVal = a.totalValue ?? -Infinity; bVal = b.totalValue ?? -Infinity; break;
+      case "latentGainLoss": aVal = a.latentGainLoss ?? -Infinity; bVal = b.latentGainLoss ?? -Infinity; break;
+      case "latentGainLossPercent": aVal = a.latentGainLossPercent ?? -Infinity; bVal = b.latentGainLossPercent ?? -Infinity; break;
+      case "stopLoss": aVal = a.stopLoss ?? -Infinity; bVal = b.stopLoss ?? -Infinity; break;
+      case "risk": aVal = getRisk(a) ?? -Infinity; bVal = getRisk(b) ?? -Infinity; break;
+      case "riskPercent": aVal = getRiskPercent(a) ?? -Infinity; bVal = getRiskPercent(b) ?? -Infinity; break;
+      default: aVal = ""; bVal = "";
+    }
+    if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, 'fr') : bVal.localeCompare(aVal, 'fr');
+    return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+  });
+
+  const hasActiveFilters = searchFilter !== "" || endDate !== "";
+  const resetFilters = () => { setSearchFilter(""); setEndDate(""); };
 
   const totalInvested = filteredPositions.reduce((sum, pos) => sum + pos.totalCost, 0);
   const totalValue = filteredPositions.reduce((sum, pos) => sum + (pos.totalValue || 0), 0);
   const totalLatentGainLoss = totalValue - totalInvested;
   const totalLatentGainLossPercent = totalInvested > 0 ? (totalLatentGainLoss / totalInvested) * 100 : 0;
   const totalPortfolio = totalValue + cash;
-  
-  // Conversion en EUR si le portefeuille est en USD
   const totalPortfolioInEUR = portfolioCurrency === 'USD' ? totalPortfolio * getConversionRate('USD') : totalPortfolio;
-
-  // Calcul du risque total pour les portefeuilles Trading
-  const totalRisk = portfolioCategory === "Trading" 
+  const totalRisk = portfolioCategory === "Trading"
     ? filteredPositions.reduce((sum, pos) => {
-        if (pos.stopLoss !== undefined) {
-          const risk = (pos.stopLoss - pos.pru) * pos.quantity;
-          return sum + risk;
-        }
+        if (pos.stopLoss !== undefined) return sum + (pos.stopLoss - pos.pru) * pos.quantity;
         return sum;
       }, 0)
     : 0;
 
   const handleSubmit = () => {
     if (!onUpdateCash) return;
-    
     const amountValue = parseFloat(amount);
-    if (isNaN(amountValue) || amountValue <= 0) {
-      alert("Veuillez saisir un montant valide");
-      return;
-    }
-
-    if (type === "withdrawal" && amountValue > cash) {
-      alert("Montant insuffisant dans les liquidités");
-      return;
-    }
-
+    if (isNaN(amountValue) || amountValue <= 0) { alert("Veuillez saisir un montant valide"); return; }
+    if (type === "withdrawal" && amountValue > cash) { alert("Montant insuffisant dans les liquidités"); return; }
     onUpdateCash(amountValue, type, date);
     setAmount("");
     setIsDialogOpen(false);
@@ -186,11 +201,9 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
 
   return (
     <Card>
-      <CardHeader>
-      </CardHeader>
+      <CardHeader></CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Barre de filtres */}
           <div className="flex gap-3 items-center flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -211,23 +224,13 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                 className="w-40"
               />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSector(!showSector)}
-              title={showSector ? "Masquer secteur" : "Afficher secteur"}
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowSector(!showSector)} title={showSector ? "Masquer secteur" : "Afficher secteur"}>
               {showSector ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
               Secteur
             </Button>
             {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={resetFilters}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Réinitialiser
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                <X className="h-4 w-4 mr-1" />Réinitialiser
               </Button>
             )}
           </div>
@@ -236,53 +239,44 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                 <TableRow>
-                  {positionsWithPrices.some(p => p.portfolioCode) && (
-                    <TableHead>Portefeuille</TableHead>
-                  )}
-                  <TableHead>Code</TableHead>
-                  <TableHead>Nom</TableHead>
-                  {showSector && <TableHead>Secteur</TableHead>}
-                  <TableHead className="text-center">Devise</TableHead>
-                  <TableHead className="text-right">Quantité</TableHead>
-                  <TableHead className="text-right">PRU ({portfolioCurrency})</TableHead>
-                  <TableHead className="text-right">Cours actuel</TableHead>
-                  <TableHead className="text-right">Montant d'entrée</TableHead>
-                  <TableHead className="text-right">Valeur actuelle</TableHead>
-                  <TableHead className="text-right">+/- Value latente</TableHead>
-                  <TableHead className="text-right">% latent</TableHead>
+                  {positionsWithPrices.some(p => p.portfolioCode) && <TableHead>Portefeuille</TableHead>}
+                  <Th col="code">Code</Th>
+                  <Th col="name">Nom</Th>
+                  {showSector && <Th col="sector">Secteur</Th>}
+                  <Th col="currency" className="text-center">Devise</Th>
+                  <Th col="quantity" className="text-right">Quantité</Th>
+                  <Th col="pru" className="text-right">PRU ({portfolioCurrency})</Th>
+                  <Th col="currentPrice" className="text-right">Cours actuel</Th>
+                  <Th col="totalCost" className="text-right">Montant d'entrée</Th>
+                  <Th col="totalValue" className="text-right">Valeur actuelle</Th>
+                  <Th col="latentGainLoss" className="text-right">+/- Value latente</Th>
+                  <Th col="latentGainLossPercent" className="text-right">% latent</Th>
                   {portfolioCategory === "Trading" && (
                     <>
-                      <TableHead className="text-right">Stop Loss</TableHead>
-                      <TableHead className="text-right">Risque</TableHead>
-                      <TableHead className="text-right">Risque %</TableHead>
+                      <Th col="stopLoss" className="text-right">Stop Loss</Th>
+                      <Th col="risk" className="text-right">Risque</Th>
+                      <Th col="riskPercent" className="text-right">Risque %</Th>
                     </>
                   )}
                   <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredPositions.length === 0 && (
+                {sortedPositions.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={portfolioCategory === "Trading" ? 16 : 13} className="text-center py-8 text-muted-foreground">
                       Aucune position en cours
                     </TableCell>
                   </TableRow>
                 )}
-                {filteredPositions.map((position) => {
+                {sortedPositions.map((position) => {
                   const positionCurrency = position.currency || portfolioCurrency;
-                  const risk = position.stopLoss !== undefined 
-                    ? (position.stopLoss - position.pru) * position.quantity 
-                    : undefined;
-                  const riskPercent = position.stopLoss !== undefined && position.pru > 0
-                    ? ((position.stopLoss - position.pru) / position.pru) * 100
-                    : undefined;
+                  const risk = getRisk(position);
+                  const riskPercent = getRiskPercent(position);
                   const hasPortfolioCodeColumn = positionsWithPrices.some(p => p.portfolioCode);
-                  
                   return (
                     <TableRow key={`${position.portfolioCode || ''}-${position.code}`}>
-                      {hasPortfolioCodeColumn && (
-                        <TableCell className="font-medium">{position.portfolioCode || '-'}</TableCell>
-                      )}
+                      {hasPortfolioCodeColumn && <TableCell className="font-medium">{position.portfolioCode || '-'}</TableCell>}
                       <TableCell className="font-medium">{position.code}</TableCell>
                       <TableCell>{position.name}</TableCell>
                       {showSector && <TableCell>{position.sector}</TableCell>}
@@ -342,15 +336,9 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => onAction?.('achat', position, position.portfolioId || portfolioId)}>
-                              Achat
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onAction?.('vente', position, position.portfolioId || portfolioId)}>
-                              Vente
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onAction?.('dividende', position, position.portfolioId || portfolioId)}>
-                              Dividende
-                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onAction?.('achat', position, position.portfolioId || portfolioId)}>Achat</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onAction?.('vente', position, position.portfolioId || portfolioId)}>Vente</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onAction?.('dividende', position, position.portfolioId || portfolioId)}>Dividende</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -363,21 +351,13 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                   <TableCell colSpan={showSector ? 7 : 6}>TOTAL</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalValue, portfolioCurrency)}</TableCell>
-                  <TableCell className={`text-right ${totalLatentGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(totalLatentGainLoss, portfolioCurrency)}
-                  </TableCell>
-                  <TableCell className={`text-right ${totalLatentGainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(totalLatentGainLossPercent)}
-                  </TableCell>
+                  <TableCell className={`text-right ${totalLatentGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(totalLatentGainLoss, portfolioCurrency)}</TableCell>
+                  <TableCell className={`text-right ${totalLatentGainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(totalLatentGainLossPercent)}</TableCell>
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell></TableCell>
-                      <TableCell className={`text-right font-bold ${totalRisk >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatCurrency(totalRisk, portfolioCurrency)}
-                      </TableCell>
-                      <TableCell className={`text-right font-bold ${totalRisk >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercent(totalRisk / totalPortfolio * 100)}
-                      </TableCell>
+                      <TableCell className={`text-right font-bold ${totalRisk >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(totalRisk, portfolioCurrency)}</TableCell>
+                      <TableCell className={`text-right font-bold ${totalRisk >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(totalRisk / totalPortfolio * 100)}</TableCell>
                     </>
                   )}
                   <TableCell></TableCell>
@@ -397,79 +377,38 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                           <DialogContent>
                             <DialogHeader>
                               <DialogTitle>Gérer les liquidités</DialogTitle>
-                              <DialogDescription>
-                                Effectuez un dépôt ou un retrait de liquidités
-                              </DialogDescription>
+                              <DialogDescription>Effectuez un dépôt ou un retrait de liquidités</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 py-4">
                               <div className="space-y-2">
                                 <Label htmlFor="cash-date">Date</Label>
-                                <Input
-                                  id="cash-date"
-                                  type="date"
-                                  value={date}
-                                  onChange={(e) => setDate(e.target.value)}
-                                />
+                                <Input id="cash-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
                               </div>
-
                               <div className="space-y-2">
                                 <Label htmlFor="cash-type">Type d'opération</Label>
                                 <Select value={type} onValueChange={(value: "deposit" | "withdrawal") => setType(value)}>
-                                  <SelectTrigger id="cash-type">
-                                    <SelectValue />
-                                  </SelectTrigger>
+                                  <SelectTrigger id="cash-type"><SelectValue /></SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="deposit">
-                                      <div className="flex items-center gap-2">
-                                        <Plus className="h-4 w-4 text-green-600" />
-                                        Dépôt
-                                      </div>
-                                    </SelectItem>
-                                    <SelectItem value="withdrawal">
-                                      <div className="flex items-center gap-2">
-                                        <Minus className="h-4 w-4 text-red-600" />
-                                        Retrait
-                                      </div>
-                                    </SelectItem>
+                                    <SelectItem value="deposit"><div className="flex items-center gap-2"><Plus className="h-4 w-4 text-green-600" />Dépôt</div></SelectItem>
+                                    <SelectItem value="withdrawal"><div className="flex items-center gap-2"><Minus className="h-4 w-4 text-red-600" />Retrait</div></SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
-
                               <div className="space-y-2">
                                 <Label htmlFor="cash-amount">Montant ({portfolioCurrency})</Label>
-                                <Input
-                                  id="cash-amount"
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="0.00"
-                                  value={amount}
-                                  onChange={(e) => setAmount(e.target.value)}
-                                />
+                                <Input id="cash-amount" type="number" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
                               </div>
-
                               <div className="text-sm text-muted-foreground">
-                                Liquidités actuelles: <span className="font-medium">{formatCurrency(cash, portfolioCurrency)}</span>
-                                <br />
+                                Liquidités actuelles: <span className="font-medium">{formatCurrency(cash, portfolioCurrency)}</span><br />
                                 Après opération:{" "}
-                                <span className={`font-medium ${
-                                  type === "deposit" ? "text-green-600" : "text-red-600"
-                                }`}>
-                                  {formatCurrency(
-                                    type === "deposit"
-                                      ? cash + (parseFloat(amount) || 0)
-                                      : cash - (parseFloat(amount) || 0),
-                                    portfolioCurrency
-                                  )}
+                                <span className={`font-medium ${type === "deposit" ? "text-green-600" : "text-red-600"}`}>
+                                  {formatCurrency(type === "deposit" ? cash + (parseFloat(amount) || 0) : cash - (parseFloat(amount) || 0), portfolioCurrency)}
                                 </span>
                               </div>
                             </div>
                             <DialogFooter>
-                              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                                Annuler
-                              </Button>
-                              <Button onClick={handleSubmit}>
-                                {type === "deposit" ? "Déposer" : "Retirer"}
-                              </Button>
+                              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Annuler</Button>
+                              <Button onClick={handleSubmit}>{type === "deposit" ? "Déposer" : "Retirer"}</Button>
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
@@ -480,13 +419,7 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                   <TableCell className="text-right font-medium text-blue-600">{formatCurrency(cash, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right">-</TableCell>
                   <TableCell className="text-right">-</TableCell>
-                  {portfolioCategory === "Trading" && (
-                    <>
-                      <TableCell className="text-right">-</TableCell>
-                      <TableCell className="text-right">-</TableCell>
-                      <TableCell className="text-right">-</TableCell>
-                    </>
-                  )}
+                  {portfolioCategory === "Trading" && (<><TableCell className="text-right">-</TableCell><TableCell className="text-right">-</TableCell><TableCell className="text-right">-</TableCell></>)}
                   <TableCell></TableCell>
                 </TableRow>
                 <TableRow className="border-t-2 font-bold bg-green-50 dark:bg-green-950/20">
@@ -495,13 +428,7 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                   <TableCell className="text-right text-lg text-green-600">{formatCurrency(totalPortfolio, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right"></TableCell>
                   <TableCell className="text-right"></TableCell>
-                  {portfolioCategory === "Trading" && (
-                    <>
-                      <TableCell className="text-right"></TableCell>
-                      <TableCell className="text-right"></TableCell>
-                      <TableCell className="text-right"></TableCell>
-                    </>
-                  )}
+                  {portfolioCategory === "Trading" && (<><TableCell className="text-right"></TableCell><TableCell className="text-right"></TableCell><TableCell className="text-right"></TableCell></>)}
                   <TableCell></TableCell>
                 </TableRow>
                 {portfolioCurrency !== 'EUR' && (
@@ -511,13 +438,7 @@ export function CurrentPositions({ positions, portfolioCurrency = 'EUR', onActio
                     <TableCell className="text-right text-sm text-amber-700 dark:text-amber-400">{formatCurrency(totalPortfolioInEUR, 'EUR')}</TableCell>
                     <TableCell className="text-right"></TableCell>
                     <TableCell className="text-right"></TableCell>
-                    {portfolioCategory === "Trading" && (
-                      <>
-                        <TableCell className="text-right"></TableCell>
-                        <TableCell className="text-right"></TableCell>
-                        <TableCell className="text-right"></TableCell>
-                      </>
-                    )}
+                    {portfolioCategory === "Trading" && (<><TableCell className="text-right"></TableCell><TableCell className="text-right"></TableCell><TableCell className="text-right"></TableCell></>)}
                     <TableCell></TableCell>
                   </TableRow>
                 )}

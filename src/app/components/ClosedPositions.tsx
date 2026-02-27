@@ -1,11 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { useState } from "react";
+import { Card, CardContent } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Search, X, Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { Search, X, Eye, EyeOff, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 
 export interface ClosedPosition {
   code: string;
@@ -20,9 +19,12 @@ export interface ClosedPosition {
   gainLoss: number;
   gainLossPercent: number;
   dividends?: number;
-  portfolioCode?: string; // Code du portefeuille d'origine (en vue consolidée)
-  sector?: string; // Secteur d'activité
+  portfolioCode?: string;
+  sector?: string;
 }
+
+type SortKey = "saleDate" | "code" | "name" | "sector" | "quantity" | "totalPurchase" | "totalSale" | "gainLoss" | "gainLossPercent" | "dividends";
+type SortDir = "asc" | "desc";
 
 interface ClosedPositionsProps {
   closedPositions: ClosedPosition[];
@@ -34,35 +36,65 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [showSector, setShowSector] = useState(false); // Affichage colonne secteur
+  const [showSector, setShowSector] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("saleDate");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: portfolioCurrency
-    }).format(value);
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR');
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ChevronsUpDown className="inline h-3 w-3 ml-1 text-muted-foreground" />;
+    return sortDir === "asc" ? <ChevronUp className="inline h-3 w-3 ml-1" /> : <ChevronDown className="inline h-3 w-3 ml-1" />;
   };
 
-  const formatPercent = (value: number) => {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-  };
+  const Th = ({ col, children, className = "" }: { col: SortKey; children: React.ReactNode; className?: string }) => (
+    <TableHead className={`cursor-pointer select-none hover:bg-muted/50 ${className}`} onClick={() => handleSort(col)}>
+      {children}<SortIcon col={col} />
+    </TableHead>
+  );
 
-  // Filtrer les positions
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: portfolioCurrency }).format(value);
+
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('fr-FR');
+
+  const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+
   const filteredPositions = closedPositions.filter(position => {
     const searchLower = searchFilter.toLowerCase();
-    const matchesSearch = searchFilter === "" || 
+    const matchesSearch = searchFilter === "" ||
       position.code.toLowerCase().includes(searchLower) ||
       position.name.toLowerCase().includes(searchLower);
-    
     const saleDate = new Date(position.saleDate);
     const matchesStartDate = !startDate || saleDate >= new Date(startDate);
     const matchesEndDate = !endDate || saleDate <= new Date(endDate);
-    
     return matchesSearch && matchesStartDate && matchesEndDate;
+  });
+
+  const sortedPositions = [...filteredPositions].sort((a, b) => {
+    let aVal: any, bVal: any;
+    switch (sortKey) {
+      case "saleDate": aVal = new Date(a.saleDate).getTime(); bVal = new Date(b.saleDate).getTime(); break;
+      case "code": aVal = a.code; bVal = b.code; break;
+      case "name": aVal = a.name; bVal = b.name; break;
+      case "sector": aVal = a.sector || ""; bVal = b.sector || ""; break;
+      case "quantity": aVal = a.quantity; bVal = b.quantity; break;
+      case "totalPurchase": aVal = a.totalPurchase; bVal = b.totalPurchase; break;
+      case "totalSale": aVal = a.totalSale; bVal = b.totalSale; break;
+      case "gainLoss": aVal = a.gainLoss; bVal = b.gainLoss; break;
+      case "gainLossPercent": aVal = a.gainLossPercent; bVal = b.gainLossPercent; break;
+      case "dividends": aVal = a.dividends || 0; bVal = b.dividends || 0; break;
+      default: aVal = ""; bVal = "";
+    }
+    if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, 'fr') : bVal.localeCompare(aVal, 'fr');
+    return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
   const totalGainLoss = filteredPositions.reduce((sum, pos) => sum + pos.gainLoss, 0);
@@ -71,20 +103,12 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
   const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
 
   const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
-
-  const resetFilters = () => {
-    setSearchFilter("");
-    setStartDate("");
-    setEndDate("");
-  };
+  const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); };
 
   return (
     <Card>
-      <CardHeader>
-      </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {/* Barre de filtres */}
+        <div className="space-y-4 pt-4">
           <div className="flex gap-3 items-center flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -97,39 +121,17 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
               />
             </div>
             <div className="flex gap-2 items-center">
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                placeholder="Date de début"
-                className="w-40"
-              />
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
               <span className="text-muted-foreground">-</span>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                placeholder="Date de fin"
-                className="w-40"
-              />
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSector(!showSector)}
-              title={showSector ? "Masquer secteur" : "Afficher secteur"}
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowSector(!showSector)} title={showSector ? "Masquer secteur" : "Afficher secteur"}>
               {showSector ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
               Secteur
             </Button>
             {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={resetFilters}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Réinitialiser
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                <X className="h-4 w-4 mr-1" />Réinitialiser
               </Button>
             )}
           </div>
@@ -138,36 +140,30 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                 <TableRow>
-                  {closedPositions.some(p => p.portfolioCode) && (
-                    <TableHead>Portefeuille</TableHead>
-                  )}
-                  <TableHead>Date de vente</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Nom</TableHead>
-                  {showSector && <TableHead>Secteur</TableHead>}
-                  <TableHead className="text-right">Nombre</TableHead>
-                  <TableHead className="text-right">Montant investi</TableHead>
-                  <TableHead className="text-right">Montant vente</TableHead>
-                  <TableHead className="text-right">+/- Value ({portfolioCurrency})</TableHead>
-                  <TableHead className="text-right">+/- Value %</TableHead>
-                  <TableHead className="text-right">Dividendes</TableHead>
+                  {closedPositions.some(p => p.portfolioCode) && <TableHead>Portefeuille</TableHead>}
+                  <Th col="saleDate">Date de vente</Th>
+                  <Th col="code">Code</Th>
+                  <Th col="name">Nom</Th>
+                  {showSector && <Th col="sector">Secteur</Th>}
+                  <Th col="quantity" className="text-right">Nombre</Th>
+                  <Th col="totalPurchase" className="text-right">Montant investi</Th>
+                  <Th col="totalSale" className="text-right">Montant vente</Th>
+                  <Th col="gainLoss" className="text-right">+/- Value ({portfolioCurrency})</Th>
+                  <Th col="gainLossPercent" className="text-right">+/- Value %</Th>
+                  <Th col="dividends" className="text-right">Dividendes</Th>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredPositions.length === 0 && (
+                {sortedPositions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
-                      Aucune position clôturée
-                    </TableCell>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Aucune position clôturée</TableCell>
                   </TableRow>
                 )}
-                {filteredPositions.map((position, index) => {
+                {sortedPositions.map((position, index) => {
                   const hasPortfolioCodeColumn = closedPositions.some(p => p.portfolioCode);
                   return (
                     <TableRow key={`${position.portfolioCode || ''}-${position.code}-${index}`}>
-                      {hasPortfolioCodeColumn && (
-                        <TableCell className="font-medium">{position.portfolioCode || '-'}</TableCell>
-                      )}
+                      {hasPortfolioCodeColumn && <TableCell className="font-medium">{position.portfolioCode || '-'}</TableCell>}
                       <TableCell>{formatDate(position.saleDate)}</TableCell>
                       <TableCell className="font-medium">{position.code}</TableCell>
                       <TableCell>{position.name}</TableCell>
@@ -190,12 +186,8 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
                   <TableCell colSpan={showSector ? 5 : 4}>TOTAL</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested + totalGainLoss)}</TableCell>
-                  <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(totalGainLoss)}
-                  </TableCell>
-                  <TableCell className={`text-right ${totalGainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(totalGainLossPercent)}
-                  </TableCell>
+                  <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(totalGainLoss)}</TableCell>
+                  <TableCell className={`text-right ${totalGainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(totalGainLossPercent)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalDividends)}</TableCell>
                 </TableRow>
               </TableBody>

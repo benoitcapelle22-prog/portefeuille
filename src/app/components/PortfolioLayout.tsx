@@ -13,8 +13,6 @@ import { db, migrateFromLocalStorage, getCurrentPortfolioId, setCurrentPortfolio
 import { useLiveQuery } from "dexie-react-hooks";
 import { exportDatabase, importDatabase, pickAutoBackupFile, startAutoBackupToFile, stopAutoBackup, saveAutoBackupSetting, clearAutoBackupSetting, loadAutoBackupSetting } from "../utils/backup";
 
-
-
 export interface PortfolioData {
   transactions: Transaction[];
   positions: Position[];
@@ -31,6 +29,7 @@ export interface PortfolioContextType {
   handleDeletePortfolio: (id: string) => void;
   setCurrentPortfolioId: (id: string) => void;
   handleAddTransaction: (transaction: Omit<Transaction, "id">, portfolioId?: string) => void;
+  handleImportTransactions: (transactions: Omit<Transaction, "id">[]) => Promise<void>;
   handleDeleteTransaction: (id: string) => void;
   handlePositionAction: (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => void;
   handleUpdateCash: (amount: number, type: "deposit" | "withdrawal", date: string) => void;
@@ -40,8 +39,6 @@ export interface PortfolioContextType {
   setDialogOpen: (open: boolean) => void;
   dialogInitialData: any;
 }
-
-// Contexte pour partager les données entre les pages
 
 const PortfolioContext = createContext<PortfolioContextType | null>(null);
 
@@ -62,166 +59,139 @@ export function PortfolioLayout() {
     name?: string;
     type?: "achat" | "vente" | "dividende";
     quantity?: number;
-    portfolioId?: string; // Ajouter l'ID du portefeuille
+    portfolioId?: string;
   }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-const handleResetDatabase = async () => {
-  const ok = window.confirm(
-    "⚠️ Cette action va supprimer définitivement toutes les données (portefeuilles, transactions, positions, paramètres).\n\nContinuer ?"
-  );
-  if (!ok) return;
-
-  try {
-    await db.transaction("rw", db.tables, async () => {
-      await Promise.all(db.tables.map((t) => t.clear()));
-    });
-
-    alert("✅ Base vidée. L’application va se recharger.");
-    window.location.reload();
-  } catch (err) {
-    console.error(err);
-    alert("❌ Impossible de vider la base.");
-  }
-};
-
-const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  const ok = window.confirm(
-    "⚠️ Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?"
-  );
-
-  if (!ok) {
-    e.target.value = "";
-    return;
-  }
-
-  try {
-    const text = await file.text();
-
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      alert("❌ Fichier invalide : ce n’est pas un JSON valide.");
-      e.target.value = "";
-      return;
-    }
-
-    await importDatabase(data);
-
-    alert("✅ Import terminé !");
-    window.location.reload();
-  } catch (err) {
-    console.error(err);
-    alert(
-      "❌ Import impossible.\nLe fichier ne correspond pas à un export valide de l’application."
+  const handleResetDatabase = async () => {
+    const ok = window.confirm(
+      "⚠️ Cette action va supprimer définitivement toutes les données (portefeuilles, transactions, positions, paramètres).\n\nContinuer ?"
     );
-  } finally {
-    e.target.value = "";
-  }
-};
-
-// ✅ AJOUT ICI : auto-backup
-
-const onEnableAutoBackup = async () => {
-  try {
-    const handle = await pickAutoBackupFile();
-   
-        // 🔹 Sauvegarder dans settings
-    await saveAutoBackupSetting(handle);
-
-    startAutoBackupToFile(handle, { intervalMs: 5 * 60 * 1000  }); // 5 minutes
-    setAutoBackupEnabled(true);
-    alert("✅ Sauvegarde automatique activée.");
-  } catch (err) {
-    console.error(err);
-    setAutoBackupEnabled(false);
-    alert(err instanceof Error ? `❌ ${err.message}`: "❌ Impossible d’activer la sauvegarde automatique.");
-  }
-};
-
-const onDisableAutoBackup = async () => {
-  try {
-    stopAutoBackup();
-    setAutoBackupEnabled(false);
-
-     await clearAutoBackupSetting();
-
-    alert("🛑 Sauvegarde automatique désactivée.");
-  } catch (err) {
-    console.error(err);
-    alert("❌ Impossible de désactiver la sauvegarde automatique.");
-  }
-};
-
-useEffect(() => {
-  const initAutoBackup = async () => {
-    const setting = await loadAutoBackupSetting();
-    if (!setting || !setting.enabled || !setting.fileHandle) 
-      {
-      setAutoBackupEnabled(false);
-      setAutoBackupNeedsPermission(false);
-      return;
-      }
-
+    if (!ok) return;
     try {
-      const perm = await setting.fileHandle.queryPermission({ mode: "readwrite" });
-            if (perm === "granted") {
-        startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
-        setAutoBackupEnabled(true);
-        setAutoBackupNeedsPermission(false);
-      } else {
-        // On sait que c’est activé, mais il faut un clic utilisateur pour réautoriser
-        setAutoBackupEnabled(false);
-        setAutoBackupNeedsPermission(true);
-      }
+      await db.transaction("rw", db.tables, async () => {
+        await Promise.all(db.tables.map((t) => t.clear()));
+      });
+      alert("✅ Base vidée. L'application va se recharger.");
+      window.location.reload();
     } catch (err) {
-      console.error("Auto-backup restore failed:", err);
-      setAutoBackupEnabled(false);
-      setAutoBackupNeedsPermission(true);
+      console.error(err);
+      alert("❌ Impossible de vider la base.");
     }
   };
 
-  initAutoBackup();
-}, []);
-
-const onReauthorizeAutoBackup = async () => {
-  const setting = await loadAutoBackupSetting();
-  if (!setting || !setting.enabled || !setting.fileHandle) return;
-
-  try {
-    const request = await setting.fileHandle.requestPermission({ mode: "readwrite" });
-    if (request !== "granted") {
-      alert("❌ Permission refusée. Impossible de réactiver la sauvegarde automatique.");
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ok = window.confirm(
+      "⚠️ Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?"
+    );
+    if (!ok) {
+      e.target.value = "";
       return;
     }
+    try {
+      const text = await file.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        alert("❌ Fichier invalide : ce n'est pas un JSON valide.");
+        e.target.value = "";
+        return;
+      }
+      await importDatabase(data);
+      alert("✅ Import terminé !");
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert("❌ Import impossible.\nLe fichier ne correspond pas à un export valide de l'application.");
+    } finally {
+      e.target.value = "";
+    }
+  };
 
-    startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
-    setAutoBackupEnabled(true);
-    setAutoBackupNeedsPermission(false);
-    alert("✅ Sauvegarde automatique réactivée.");
-  } catch (err) {
-    console.error(err);
-    alert("❌ Impossible de réactiver la sauvegarde automatique.");
-  }
-};
+  const onEnableAutoBackup = async () => {
+    try {
+      const handle = await pickAutoBackupFile();
+      await saveAutoBackupSetting(handle);
+      startAutoBackupToFile(handle, { intervalMs: 5 * 60 * 1000 });
+      setAutoBackupEnabled(true);
+      alert("✅ Sauvegarde automatique activée.");
+    } catch (err) {
+      console.error(err);
+      setAutoBackupEnabled(false);
+      alert(err instanceof Error ? `❌ ${err.message}` : "❌ Impossible d'activer la sauvegarde automatique.");
+    }
+  };
 
+  const onDisableAutoBackup = async () => {
+    try {
+      stopAutoBackup();
+      setAutoBackupEnabled(false);
+      await clearAutoBackupSetting();
+      alert("🛑 Sauvegarde automatique désactivée.");
+    } catch (err) {
+      console.error(err);
+      alert("❌ Impossible de désactiver la sauvegarde automatique.");
+    }
+  };
 
-  // Charger les données depuis IndexedDB avec Dexie
+  useEffect(() => {
+    const initAutoBackup = async () => {
+      const setting = await loadAutoBackupSetting();
+      if (!setting || !setting.enabled || !setting.fileHandle) {
+        setAutoBackupEnabled(false);
+        setAutoBackupNeedsPermission(false);
+        return;
+      }
+      try {
+        const perm = await setting.fileHandle.queryPermission({ mode: "readwrite" });
+        if (perm === "granted") {
+          startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
+          setAutoBackupEnabled(true);
+          setAutoBackupNeedsPermission(false);
+        } else {
+          setAutoBackupEnabled(false);
+          setAutoBackupNeedsPermission(true);
+        }
+      } catch (err) {
+        console.error("Auto-backup restore failed:", err);
+        setAutoBackupEnabled(false);
+        setAutoBackupNeedsPermission(true);
+      }
+    };
+    initAutoBackup();
+  }, []);
+
+  const onReauthorizeAutoBackup = async () => {
+    const setting = await loadAutoBackupSetting();
+    if (!setting || !setting.enabled || !setting.fileHandle) return;
+    try {
+      const request = await setting.fileHandle.requestPermission({ mode: "readwrite" });
+      if (request !== "granted") {
+        alert("❌ Permission refusée. Impossible de réactiver la sauvegarde automatique.");
+        return;
+      }
+      startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
+      setAutoBackupEnabled(true);
+      setAutoBackupNeedsPermission(false);
+      alert("✅ Sauvegarde automatique réactivée.");
+    } catch (err) {
+      console.error(err);
+      alert("❌ Impossible de réactiver la sauvegarde automatique.");
+    }
+  };
+
   const portfolios = useLiveQuery(() => db.portfolios.toArray(), []);
   const allTransactions = useLiveQuery(() => db.transactions.toArray(), []);
   const allPositions = useLiveQuery(() => db.positions.toArray(), []);
   const allClosedPositions = useLiveQuery(() => db.closedPositions.toArray(), []);
 
-  // Construire portfolioData à partir des données de la base
   const portfolioData: Record<string, PortfolioData> = {};
-  
   if (portfolios && allTransactions && allPositions && allClosedPositions) {
     portfolios.forEach(portfolio => {
       const portfolioTransactions = allTransactions
@@ -230,21 +200,18 @@ const onReauthorizeAutoBackup = async () => {
           const { portfolioId, ...transaction } = t;
           return transaction as Transaction;
         });
-
       const portfolioPositions = allPositions
         .filter(p => p.portfolioId === portfolio.id)
         .map(p => {
           const { portfolioId, id, ...position } = p;
           return position as Position;
         });
-
       const portfolioClosedPositions = allClosedPositions
         .filter(cp => cp.portfolioId === portfolio.id)
         .map(cp => {
           const { portfolioId, id, ...closedPosition } = cp;
           return closedPosition as ClosedPosition;
         });
-
       portfolioData[portfolio.id] = {
         transactions: portfolioTransactions,
         positions: portfolioPositions,
@@ -253,118 +220,75 @@ const onReauthorizeAutoBackup = async () => {
     });
   }
 
-  // Migration et initialisation
   useEffect(() => {
     const initDB = async () => {
       try {
-        // Effectuer la migration depuis localStorage
         const migrated = await migrateFromLocalStorage();
         if (migrated) {
           console.log('Données migrées depuis localStorage vers IndexedDB');
         }
-
-        // Charger le portefeuille courant
         const savedCurrentId = await getCurrentPortfolioId();
         const loadedPortfolios = await db.portfolios.toArray();
-
         if (savedCurrentId && loadedPortfolios.find(p => p.id === savedCurrentId)) {
           setCurrentPortfolioIdState(savedCurrentId);
         } else if (loadedPortfolios.length > 0) {
           setCurrentPortfolioIdState(loadedPortfolios[0].id);
           await saveCurrentPortfolioId(loadedPortfolios[0].id);
         } else {
-          // Créer un portefeuille par défaut
           const defaultPortfolio: Portfolio = {
             id: crypto.randomUUID(),
             name: "Mon portefeuille principal",
             category: "Trading",
             currency: "EUR",
-            fees: {
-              defaultFeesPercent: 0,
-              defaultFeesMin: 0,
-              defaultTFF: 0,
-            },
+            fees: { defaultFeesPercent: 0, defaultFeesMin: 0, defaultTFF: 0 },
             cash: 0,
           };
           await db.portfolios.add(defaultPortfolio);
           setCurrentPortfolioIdState(defaultPortfolio.id);
           await saveCurrentPortfolioId(defaultPortfolio.id);
         }
-
         setIsLoading(false);
       } catch (error) {
         console.error('Erreur lors de l\'initialisation de la base de données:', error);
         setIsLoading(false);
       }
     };
-
     initDB();
   }, []);
 
-  // Fonction pour changer le portefeuille courant
   const setCurrentPortfolioId = async (id: string) => {
     setCurrentPortfolioIdState(id);
     await saveCurrentPortfolioId(id);
   };
 
-  // Obtenir les données du portefeuille actuel
   const currentData: PortfolioData = currentPortfolioId && portfolioData[currentPortfolioId]
     ? portfolioData[currentPortfolioId]
     : { transactions: [], positions: [], closedPositions: [] };
 
   const currentPortfolio = portfolios?.find(p => p.id === currentPortfolioId);
 
-  // Obtenir les données du portefeuille actuel ou consolidées
   const getCurrentData = (): PortfolioData => {
     if (!portfolios) return { transactions: [], positions: [], closedPositions: [] };
-    
     if (currentPortfolioId === "ALL") {
-      // Vue consolidée: agréger toutes les données sans fusionner les positions
-      const allTransactions: Transaction[] = [];
-      const allPositions: Position[] = [];
-      const allClosedPositions: ClosedPosition[] = [];
-      
+      const allTx: Transaction[] = [];
+      const allPos: Position[] = [];
+      const allClosed: ClosedPosition[] = [];
       portfolios.forEach(portfolio => {
         const data = portfolioData[portfolio.id];
         if (!data) return;
-        
-        // Utiliser le code du portefeuille ou son nom comme fallback
         const portfolioIdentifier = portfolio.code || portfolio.name;
-        
-        // Ajouter toutes les transactions avec le code du portefeuille
         data.transactions.forEach(transaction => {
-          allTransactions.push({
-            ...transaction,
-            portfolioCode: portfolioIdentifier,
-          });
+          allTx.push({ ...transaction, portfolioCode: portfolioIdentifier });
         });
-        
-        // Ajouter les positions avec le code et l'ID du portefeuille
         data.positions.forEach(position => {
-          allPositions.push({
-            ...position,
-            portfolioCode: portfolioIdentifier,
-            portfolioId: portfolio.id,
-          });
+          allPos.push({ ...position, portfolioCode: portfolioIdentifier, portfolioId: portfolio.id });
         });
-        
-        // Ajouter les positions clôturées avec le code du portefeuille
         data.closedPositions.forEach(closedPosition => {
-          allClosedPositions.push({
-            ...closedPosition,
-            portfolioCode: portfolioIdentifier,
-          });
+          allClosed.push({ ...closedPosition, portfolioCode: portfolioIdentifier });
         });
       });
-      
-      return {
-        transactions: allTransactions,
-        positions: allPositions,
-        closedPositions: allClosedPositions,
-      };
+      return { transactions: allTx, positions: allPos, closedPositions: allClosed };
     }
-    
-    // Portefeuille individuel
     return currentPortfolioId && portfolioData[currentPortfolioId]
       ? portfolioData[currentPortfolioId]
       : { transactions: [], positions: [], closedPositions: [] };
@@ -372,37 +296,23 @@ const onReauthorizeAutoBackup = async () => {
 
   const consolidatedData = getCurrentData();
 
-  const updateCurrentPortfolioData = async (data: Partial<PortfolioData>) => {
-    if (!currentPortfolioId || currentPortfolioId === "ALL") return;
-
+  const updateCurrentPortfolioData = async (data: Partial<PortfolioData>, targetPortfolioId?: string) => {
+    const portfolioId = targetPortfolioId || currentPortfolioId;
+    if (!portfolioId || portfolioId === "ALL") return;
     try {
-      // Mettre à jour les transactions
       if (data.transactions) {
-        await db.transactions.where('portfolioId').equals(currentPortfolioId).delete();
-        const dbTransactions: DBTransaction[] = data.transactions.map(t => ({
-          ...t,
-          portfolioId: currentPortfolioId
-        }));
+        await db.transactions.where('portfolioId').equals(portfolioId).delete();
+        const dbTransactions: DBTransaction[] = data.transactions.map(t => ({ ...t, portfolioId }));
         await db.transactions.bulkAdd(dbTransactions);
       }
-
-      // Mettre à jour les positions
       if (data.positions) {
-        await db.positions.where('portfolioId').equals(currentPortfolioId).delete();
-        const dbPositions: DBPosition[] = data.positions.map(p => ({
-          ...p,
-          portfolioId: currentPortfolioId
-        }));
+        await db.positions.where('portfolioId').equals(portfolioId).delete();
+        const dbPositions: DBPosition[] = data.positions.map(p => ({ ...p, portfolioId }));
         await db.positions.bulkAdd(dbPositions);
       }
-
-      // Mettre à jour les positions clôturées
       if (data.closedPositions) {
-        await db.closedPositions.where('portfolioId').equals(currentPortfolioId).delete();
-        const dbClosedPositions: DBClosedPosition[] = data.closedPositions.map(cp => ({
-          ...cp,
-          portfolioId: currentPortfolioId
-        }));
+        await db.closedPositions.where('portfolioId').equals(portfolioId).delete();
+        const dbClosedPositions: DBClosedPosition[] = data.closedPositions.map(cp => ({ ...cp, portfolioId }));
         await db.closedPositions.bulkAdd(dbClosedPositions);
       }
     } catch (error) {
@@ -411,12 +321,7 @@ const onReauthorizeAutoBackup = async () => {
   };
 
   const handleCreatePortfolio = async (portfolio: Omit<Portfolio, "id">) => {
-    const newPortfolio: Portfolio = {
-      id: crypto.randomUUID(),
-      ...portfolio,
-      cash: 0,
-    };
-
+    const newPortfolio: Portfolio = { id: crypto.randomUUID(), ...portfolio, cash: 0 };
     try {
       await db.portfolios.add(newPortfolio);
       await setCurrentPortfolioId(newPortfolio.id);
@@ -442,7 +347,6 @@ const onReauthorizeAutoBackup = async () => {
       await db.transactions.where('portfolioId').equals(id).delete();
       await db.positions.where('portfolioId').equals(id).delete();
       await db.closedPositions.where('portfolioId').equals(id).delete();
-
       const remainingPortfolios = await db.portfolios.toArray();
       if (currentPortfolioId === id) {
         if (remainingPortfolios.length > 0) {
@@ -457,20 +361,11 @@ const onReauthorizeAutoBackup = async () => {
   };
 
   const handleAddTransaction = (transaction: Omit<Transaction, "id">, portfolioId?: string) => {
-    // Utiliser le portfolioId fourni, sinon utiliser le currentPortfolioId
     const targetPortfolioId = portfolioId || currentPortfolioId;
-    
     if (!targetPortfolioId) return;
-
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: crypto.randomUUID(),
-    };
-
-    // Obtenir les données du portefeuille cible
+    const newTransaction: Transaction = { ...transaction, id: crypto.randomUUID() };
     const targetData = portfolioData[targetPortfolioId] || { transactions: [], positions: [], closedPositions: [] };
     const newTransactions = [...targetData.transactions, newTransaction];
-
     if (transaction.type === "achat") {
       handlePurchase(newTransaction, newTransactions, targetPortfolioId);
     } else if (transaction.type === "vente") {
@@ -480,137 +375,200 @@ const onReauthorizeAutoBackup = async () => {
     }
   };
 
+  // ✅ NOUVELLE FONCTION : import en une seule passe, lit directement la DB
+  const handleImportTransactions = async (transactions: Omit<Transaction, "id">[]): Promise<void> => {
+    const targetPortfolioId = currentPortfolioId;
+    if (!targetPortfolioId || targetPortfolioId === "ALL") {
+      alert("Veuillez sélectionner un portefeuille spécifique avant d'importer.");
+      return;
+    }
+
+    // Lire l'état actuel directement depuis la DB (pas depuis portfolioData figé)
+    const existingTransactions = await db.transactions.where('portfolioId').equals(targetPortfolioId).toArray();
+    const existingPositions = await db.positions.where('portfolioId').equals(targetPortfolioId).toArray();
+    const existingClosedPositions = await db.closedPositions.where('portfolioId').equals(targetPortfolioId).toArray();
+
+    // Copies locales mutables — on les met à jour au fil des transactions
+    const allTx: DBTransaction[] = [...existingTransactions];
+    const positions: DBPosition[] = [...existingPositions];
+    const closedPositions: DBClosedPosition[] = [...existingClosedPositions];
+
+    for (const tx of transactions) {
+      const newTx: DBTransaction = {
+        ...tx,
+        id: crypto.randomUUID(),
+        portfolioId: targetPortfolioId,
+      };
+      allTx.push(newTx);
+
+      const txCode = (tx.code || "").trim().toUpperCase();
+      const convertedUnitPrice = tx.unitPrice * (tx.conversionRate || 1);
+
+      if (tx.type === "achat") {
+        const idx = positions.findIndex(p => (p.code || "").trim().toUpperCase() === txCode);
+        const totalCost = tx.quantity * convertedUnitPrice + (tx.fees || 0) + (tx.tff || 0);
+
+        if (idx >= 0) {
+          const pos = positions[idx];
+          const newTotalCost = pos.totalCost + totalCost;
+          const newQuantity = pos.quantity + tx.quantity;
+          positions[idx] = {
+            ...pos,
+            quantity: newQuantity,
+            totalCost: newTotalCost,
+            pru: newTotalCost / newQuantity,
+            currency: tx.currency,
+          };
+        } else {
+          positions.push({
+            id: crypto.randomUUID(),
+            portfolioId: targetPortfolioId,
+            code: tx.code,
+            name: tx.name,
+            quantity: tx.quantity,
+            totalCost,
+            pru: totalCost / tx.quantity,
+            currency: tx.currency,
+            sector: tx.sector,
+          });
+        }
+
+      } else if (tx.type === "vente") {
+        const idx = positions.findIndex(p => (p.code || "").trim().toUpperCase() === txCode);
+
+        if (idx < 0) {
+          console.warn(`Import: vente ignorée, aucune position pour ${txCode}`);
+          continue;
+        }
+
+        const pos = positions[idx];
+        if (pos.quantity < tx.quantity) {
+          console.warn(`Import: vente ignorée, quantité insuffisante pour ${txCode} (stock: ${pos.quantity}, vente: ${tx.quantity})`);
+          continue;
+        }
+
+        const totalSale = tx.quantity * convertedUnitPrice - (tx.fees || 0) - (tx.tff || 0);
+        const totalPurchase = tx.quantity * pos.pru;
+        const gainLoss = totalSale - totalPurchase;
+
+        const purchaseTx = allTx
+          .filter(t => (t.code || "").trim().toUpperCase() === txCode && t.type === "achat")
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+
+        closedPositions.push({
+          id: crypto.randomUUID(),
+          portfolioId: targetPortfolioId,
+          code: tx.code,
+          name: tx.name,
+          purchaseDate: purchaseTx?.date || tx.date,
+          saleDate: tx.date,
+          quantity: tx.quantity,
+          pru: pos.pru,
+          totalPurchase,
+          totalSale,
+          averageSalePrice: totalSale / tx.quantity,
+          gainLoss,
+          gainLossPercent: (gainLoss / totalPurchase) * 100,
+          dividends: 0,
+          sector: pos.sector,
+        });
+
+        const newQuantity = pos.quantity - tx.quantity;
+        if (newQuantity === 0) {
+          positions.splice(idx, 1);
+        } else {
+          positions[idx] = {
+            ...pos,
+            quantity: newQuantity,
+            totalCost: pos.totalCost - totalPurchase,
+          };
+        }
+      }
+      // dividendes, dépôts, retraits : on enregistre juste la transaction
+    }
+
+    // Tout écrire en base en une seule transaction atomique
+    await db.transaction("rw", [db.transactions, db.positions, db.closedPositions], async () => {
+      await db.transactions.where('portfolioId').equals(targetPortfolioId).delete();
+      await db.positions.where('portfolioId').equals(targetPortfolioId).delete();
+      await db.closedPositions.where('portfolioId').equals(targetPortfolioId).delete();
+      await db.transactions.bulkAdd(allTx);
+      await db.positions.bulkAdd(positions);
+      await db.closedPositions.bulkAdd(closedPositions);
+    });
+  };
+
   const handlePurchase = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
-    // Obtenir les données du portefeuille cible
     const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
     const txCode = (transaction.code || "").trim().toUpperCase();
     const existingPosition = targetData.positions.find(p => (p.code || "").trim().toUpperCase() === txCode);
-    
-    // Convertir le montant dans la devise du portefeuille
     const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-    // Les frais et TFF sont DÉJÀ dans la devise du portefeuille, ne pas les convertir
     const convertedFees = transaction.fees;
     const convertedTff = transaction.tff;
-    
-    // Calculer le coût total de l'achat
     const totalCost = transaction.quantity * convertedUnitPrice + convertedFees + convertedTff;
-    
-    // Mettre à jour les liquidités
     if (portfolioId) {
       const targetPortfolio = await db.portfolios.get(portfolioId);
       if (targetPortfolio) {
-        const newCash = (targetPortfolio.cash || 0) - totalCost;
-        await db.portfolios.update(portfolioId, { cash: newCash });
+        await db.portfolios.update(portfolioId, { cash: (targetPortfolio.cash || 0) - totalCost });
       }
     }
-    
     if (existingPosition) {
-      // Mise à jour de la position existante avec nouveau PRU
       const newTotalCost = existingPosition.totalCost + totalCost;
       const newQuantity = existingPosition.quantity + transaction.quantity;
       const newPRU = newTotalCost / newQuantity;
-
       const updatedPositions = targetData.positions.map(p =>
         p.code === transaction.code
-          ? {
-              ...p,
-              quantity: newQuantity,
-              totalCost: newTotalCost,
-              pru: newPRU,
-              currency: transaction.currency,
-            }
+          ? { ...p, quantity: newQuantity, totalCost: newTotalCost, pru: newPRU, currency: transaction.currency }
           : p
       );
-
-      await updateCurrentPortfolioData({
-        transactions: newTransactions,
-        positions: updatedPositions,
-      });
+      await updateCurrentPortfolioData({ transactions: newTransactions, positions: updatedPositions }, portfolioId);
     } else {
-      // Nouvelle position
       const pru = totalCost / transaction.quantity;
-
       await updateCurrentPortfolioData({
         transactions: newTransactions,
         positions: [
           ...targetData.positions,
-          {
-            code: transaction.code,
-            name: transaction.name,
-            quantity: transaction.quantity,
-            totalCost,
-            pru,
-            currency: transaction.currency,
-            sector: transaction.sector, // Ajouter le secteur
-          },
+          { code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru, currency: transaction.currency, sector: transaction.sector },
         ],
-      });
+      }, portfolioId);
     }
   };
 
   const handleSale = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
-    // Obtenir les données du portefeuille cible
     const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
     const existingPosition = targetData.positions.find(p => p.code === transaction.code);
-
-if (!existingPosition) {
-  console.warn(`Vente ignorée : aucune position trouvée pour ${transaction.code}`);
-  await updateCurrentPortfolioData({ transactions: newTransactions });
-  return;
-}
-
+    if (!existingPosition) {
+      console.warn(`Vente ignorée : aucune position trouvée pour ${transaction.code}`);
+      await updateCurrentPortfolioData({ transactions: newTransactions }, portfolioId);
+      return;
+    }
     if (existingPosition.quantity < transaction.quantity) {
       alert("Erreur: Quantité insuffisante pour la vente");
       return;
     }
-
-    // Convertir le montant dans la devise du portefeuille
     const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
     const convertedFees = transaction.fees * transaction.conversionRate;
     const convertedTff = transaction.tff * transaction.conversionRate;
-
-    // Calculer le prix de vente moyen
     const totalSale = transaction.quantity * convertedUnitPrice - convertedFees - convertedTff;
     const averageSalePrice = totalSale / transaction.quantity;
-
-    // Mettre à jour les liquidités (augmentation)
     if (portfolioId) {
       const targetPortfolio = await db.portfolios.get(portfolioId);
       if (targetPortfolio) {
-        const newCash = (targetPortfolio.cash || 0) + totalSale;
-        await db.portfolios.update(portfolioId, { cash: newCash });
+        await db.portfolios.update(portfolioId, { cash: (targetPortfolio.cash || 0) + totalSale });
       }
     }
-
-    // Calculer le montant total acheté pour les titres vendus
     const totalPurchase = transaction.quantity * existingPosition.pru;
-
-    // Calculer la plus/moins-value
     const gainLoss = totalSale - totalPurchase;
     const gainLossPercent = (gainLoss / totalPurchase) * 100;
-
-    // Trouver la date d'achat initiale
     const purchaseTransaction = newTransactions
       .filter(t => t.code === transaction.code && t.type === "achat")
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-
-    // Calculer les dividendes reçus entre l'achat et la vente
     const purchaseDate = new Date(purchaseTransaction?.date || transaction.date);
     const saleDate = new Date(transaction.date);
     const dividends = newTransactions
-      .filter(t => 
-        t.code === transaction.code && 
-        t.type === "dividende" && 
-        new Date(t.date) >= purchaseDate && 
-        new Date(t.date) <= saleDate
-      )
-      .reduce((sum, t) => {
-        const dividendAmount = (t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0);
-        return sum + dividendAmount;
-      }, 0);
-
+      .filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate)
+      .reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
     const newQuantity = existingPosition.quantity - transaction.quantity;
-
     const closedPosition: ClosedPosition = {
       code: transaction.code,
       name: transaction.name,
@@ -619,70 +577,48 @@ if (!existingPosition) {
       quantity: transaction.quantity,
       pru: existingPosition.pru,
       totalPurchase,
-      totalSale, 
+      totalSale,
       averageSalePrice,
       gainLoss,
       gainLossPercent,
       dividends,
-      sector: existingPosition.sector, // Ajouter le secteur de la position
+      sector: existingPosition.sector,
     };
-
     if (newQuantity === 0) {
-      // Position entièrement vendue
       await updateCurrentPortfolioData({
         transactions: newTransactions,
         positions: targetData.positions.filter(p => p.code !== transaction.code),
         closedPositions: [...targetData.closedPositions, closedPosition],
-      });
+      }, portfolioId);
     } else {
-      // Vente partielle
-      const newTotalCost = existingPosition.totalCost - totalPurchase;
-      
       await updateCurrentPortfolioData({
         transactions: newTransactions,
         positions: targetData.positions.map(p =>
           p.code === transaction.code
-            ? {
-                ...p,
-                quantity: newQuantity,
-                totalCost: newTotalCost,
-              }
+            ? { ...p, quantity: newQuantity, totalCost: existingPosition.totalCost - totalPurchase }
             : p
         ),
         closedPositions: [...targetData.closedPositions, closedPosition],
-      });
+      }, portfolioId);
     }
   };
 
   const handleDividend = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
-    // Obtenir les données du portefeuille cible
-    const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
-    
-    // Mettre à jour les liquidités (augmentation pour les dividendes)
     if (portfolioId) {
       const targetPortfolio = await db.portfolios.get(portfolioId);
       if (targetPortfolio) {
         const dividendAmount = (transaction.unitPrice * transaction.quantity * transaction.conversionRate) - (transaction.tax || 0);
-        const newCash = (targetPortfolio.cash || 0) + dividendAmount;
-        await db.portfolios.update(portfolioId, { cash: newCash });
+        await db.portfolios.update(portfolioId, { cash: (targetPortfolio.cash || 0) + dividendAmount });
       }
     }
-    
-    await updateCurrentPortfolioData({
-      transactions: newTransactions,
-    });
+    await updateCurrentPortfolioData({ transactions: newTransactions }, portfolioId);
   };
 
   const handleDeleteTransaction = (id: string) => {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer cette transaction ?")) {
-      return;
-    }
-
+    if (!confirm("Êtes-vous sûr de vouloir supprimer cette transaction ?")) return;
     const updatedTransactions = currentData.transactions.filter(t => t.id !== id);
-    
     const newPositions: Position[] = [];
     const newClosedPositions: ClosedPosition[] = [];
-
     updatedTransactions
       .filter(t => t.type === "achat" || t.type === "vente")
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
@@ -692,242 +628,93 @@ if (!existingPosition) {
           const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
           const convertedFees = transaction.fees * transaction.conversionRate;
           const convertedTff = transaction.tff * transaction.conversionRate;
-
           if (existingPosition) {
-            const newTotalCost = existingPosition.totalCost + 
-              (transaction.quantity * convertedUnitPrice + convertedFees + convertedTff);
+            const newTotalCost = existingPosition.totalCost + (transaction.quantity * convertedUnitPrice + convertedFees + convertedTff);
             const newQuantity = existingPosition.quantity + transaction.quantity;
-            const newPRU = newTotalCost / newQuantity;
-
             existingPosition.quantity = newQuantity;
             existingPosition.totalCost = newTotalCost;
-            existingPosition.pru = newPRU;
+            existingPosition.pru = newTotalCost / newQuantity;
             existingPosition.currency = transaction.currency;
           } else {
             const totalCost = transaction.quantity * convertedUnitPrice + convertedFees + convertedTff;
-            const pru = totalCost / transaction.quantity;
-
-            newPositions.push({
-              code: transaction.code,
-              name: transaction.name,
-              quantity: transaction.quantity,
-              totalCost,
-              pru,
-              currency: transaction.currency,
-              sector: transaction.sector, // Ajouter le secteur
-            });
+            newPositions.push({ code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
           }
         } else if (transaction.type === "vente") {
           const existingPosition = newPositions.find(p => p.code === transaction.code);
-          
           if (existingPosition && existingPosition.quantity >= transaction.quantity) {
             const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
             const convertedFees = transaction.fees * transaction.conversionRate;
             const convertedTff = transaction.tff * transaction.conversionRate;
-
             const totalSale = transaction.quantity * convertedUnitPrice - convertedFees - convertedTff;
-            const averageSalePrice = totalSale / transaction.quantity;
             const totalPurchase = transaction.quantity * existingPosition.pru;
             const gainLoss = totalSale - totalPurchase;
-            const gainLossPercent = (gainLoss / totalPurchase) * 100;
-
-            const purchaseTransaction = updatedTransactions
-              .filter(t => t.code === transaction.code && t.type === "achat")
-              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-
+            const purchaseTransaction = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
             const purchaseDate = new Date(purchaseTransaction?.date || transaction.date);
             const saleDate = new Date(transaction.date);
-            const dividends = updatedTransactions
-              .filter(t => 
-                t.code === transaction.code && 
-                t.type === "dividende" && 
-                new Date(t.date) >= purchaseDate && 
-                new Date(t.date) <= saleDate
-              )
-              .reduce((sum, t) => {
-                const dividendAmount = (t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0);
-                return sum + dividendAmount;
-              }, 0);
-
-            newClosedPositions.push({
-              code: transaction.code,
-              name: transaction.name,
-              purchaseDate: purchaseTransaction?.date || transaction.date,
-              saleDate: transaction.date,
-              quantity: transaction.quantity,
-              pru: existingPosition.pru,
-              totalPurchase,
-              totalSale,
-              averageSalePrice,
-              gainLoss,
-              gainLossPercent,
-              dividends,
-              sector: existingPosition.sector, // Ajouter le secteur de la position
-            });
-
+            const dividends = updatedTransactions.filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
+            newClosedPositions.push({ code: transaction.code, name: transaction.name, purchaseDate: purchaseTransaction?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existingPosition.pru, totalPurchase, totalSale, averageSalePrice: totalSale / transaction.quantity, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existingPosition.sector });
             const newQuantity = existingPosition.quantity - transaction.quantity;
             if (newQuantity === 0) {
-              const index = newPositions.indexOf(existingPosition);
-              newPositions.splice(index, 1);
+              newPositions.splice(newPositions.indexOf(existingPosition), 1);
             } else {
-              const newTotalCost = existingPosition.totalCost - totalPurchase;
               existingPosition.quantity = newQuantity;
-              existingPosition.totalCost = newTotalCost;
+              existingPosition.totalCost = existingPosition.totalCost - totalPurchase;
             }
           }
         }
       });
-
-    updateCurrentPortfolioData({
-      transactions: updatedTransactions,
-      positions: newPositions,
-      closedPositions: newClosedPositions,
-    });
+    updateCurrentPortfolioData({ transactions: updatedTransactions, positions: newPositions, closedPositions: newClosedPositions });
   };
 
   const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => {
-    setDialogInitialData({
-      code: position.code,
-      name: position.name,
-      type: action,
-      quantity: action === 'vente' ? position.quantity : undefined,
-      portfolioId: portfolioId, // Stocker l'ID du portefeuille
-    });
+    setDialogInitialData({ code: position.code, name: position.name, type: action, quantity: action === 'vente' ? position.quantity : undefined, portfolioId });
     setDialogOpen(true);
   };
 
   const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal", date: string) => {
     if (!currentPortfolioId || !portfolios) return;
-
     const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
     if (!currentPortfolio) return;
-
     const newCash = type === "deposit" ? (currentPortfolio.cash || 0) + amount : (currentPortfolio.cash || 0) - amount;
-    if (newCash < 0) {
-      alert("Erreur: Le solde ne peut pas être négatif");
-      return;
-    }
-
-    // Créer une transaction pour l'historique
-    const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
-      date,
-      code: "CASH",
-      name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités",
-      type: type === "deposit" ? "depot" : "retrait",
-      quantity: 1,
-      unitPrice: amount,
-      fees: 0,
-      tff: 0,
-      currency: currentPortfolio.currency,
-      conversionRate: 1,
-    };
-
-    // Mettre à jour les liquidités et ajouter la transaction
+    if (newCash < 0) { alert("Erreur: Le solde ne peut pas être négatif"); return; }
+    const newTransaction: Transaction = { id: crypto.randomUUID(), date, code: "CASH", name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités", type: type === "deposit" ? "depot" : "retrait", quantity: 1, unitPrice: amount, fees: 0, tff: 0, currency: currentPortfolio.currency, conversionRate: 1 };
     await db.portfolios.update(currentPortfolioId, { cash: newCash });
-
-    await updateCurrentPortfolioData({
-      transactions: [...currentData.transactions, newTransaction],
-    });
+    await updateCurrentPortfolioData({ transactions: [...currentData.transactions, newTransaction] });
   };
 
   const handleUpdateStopLoss = async (code: string, stopLoss: number | undefined) => {
     if (!currentPortfolioId || !portfolios) return;
-
-    // En vue consolidée, mettre à jour tous les portefeuilles contenant cette position
     if (currentPortfolioId === "ALL") {
       for (const portfolio of portfolios) {
         const portfolioPositions = portfolioData[portfolio.id]?.positions || [];
-        const hasPosition = portfolioPositions.some(p => p.code === code);
-        
-        if (hasPosition) {
-          const updatedPositions = portfolioPositions.map(position => {
-            if (position.code === code) {
-              return {
-                ...position,
-                stopLoss,
-              };
-            }
-            return position;
-          });
-          
-          // Mettre à jour dans la base de données
+        if (portfolioPositions.some(p => p.code === code)) {
+          const updatedPositions = portfolioPositions.map(p => p.code === code ? { ...p, stopLoss } : p);
           await db.positions.where('portfolioId').equals(portfolio.id).delete();
-          const dbPositions: DBPosition[] = updatedPositions.map(p => ({
-            ...p,
-            portfolioId: portfolio.id
-          }));
-          await db.positions.bulkAdd(dbPositions);
+          await db.positions.bulkAdd(updatedPositions.map(p => ({ ...p, portfolioId: portfolio.id })));
         }
       }
     } else {
-      // Vue portefeuille individuel
       const currentPortfolioData = portfolioData[currentPortfolioId];
       if (!currentPortfolioData) return;
-
-      const updatedPositions = currentPortfolioData.positions.map(position => {
-        if (position.code === code) {
-          return {
-            ...position,
-            stopLoss,
-          };
-        }
-        return position;
-      });
-
-      await updateCurrentPortfolioData({
-        positions: updatedPositions,
-      });
+      await updateCurrentPortfolioData({ positions: currentPortfolioData.positions.map(p => p.code === code ? { ...p, stopLoss } : p) });
     }
   };
 
   const handleUpdateCurrentPrice = async (code: string, manualCurrentPrice: number | undefined) => {
     if (!currentPortfolioId || !portfolios) return;
-
-    // En vue consolidée, mettre à jour tous les portefeuilles contenant cette position
     if (currentPortfolioId === "ALL") {
       for (const portfolio of portfolios) {
         const portfolioPositions = portfolioData[portfolio.id]?.positions || [];
-        const hasPosition = portfolioPositions.some(p => p.code === code);
-        
-        if (hasPosition) {
-          const updatedPositions = portfolioPositions.map(position => {
-            if (position.code === code) {
-              return {
-                ...position,
-                manualCurrentPrice,
-              };
-            }
-            return position;
-          });
-          
-          // Mettre à jour dans la base de données
+        if (portfolioPositions.some(p => p.code === code)) {
+          const updatedPositions = portfolioPositions.map(p => p.code === code ? { ...p, manualCurrentPrice } : p);
           await db.positions.where('portfolioId').equals(portfolio.id).delete();
-          const dbPositions: DBPosition[] = updatedPositions.map(p => ({
-            ...p,
-            portfolioId: portfolio.id
-          }));
-          await db.positions.bulkAdd(dbPositions);
+          await db.positions.bulkAdd(updatedPositions.map(p => ({ ...p, portfolioId: portfolio.id })));
         }
       }
     } else {
-      // Vue portefeuille individuel
       const currentPortfolioData = portfolioData[currentPortfolioId];
       if (!currentPortfolioData) return;
-
-      const updatedPositions = currentPortfolioData.positions.map(position => {
-        if (position.code === code) {
-          return {
-            ...position,
-            manualCurrentPrice,
-          };
-        }
-        return position;
-      });
-
-      await updateCurrentPortfolioData({
-        positions: updatedPositions,
-      });
+      await updateCurrentPortfolioData({ positions: currentPortfolioData.positions.map(p => p.code === code ? { ...p, manualCurrentPrice } : p) });
     }
   };
 
@@ -941,6 +728,7 @@ if (!existingPosition) {
     handleDeletePortfolio,
     setCurrentPortfolioId,
     handleAddTransaction,
+    handleImportTransactions,
     handleDeleteTransaction,
     handlePositionAction,
     handleUpdateCash,
@@ -951,7 +739,6 @@ if (!existingPosition) {
     dialogInitialData,
   };
 
-  // Afficher un état de chargement pendant l'initialisation
   if (isLoading || !portfolios) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -981,122 +768,42 @@ if (!existingPosition) {
             onSelectPortfolio={setCurrentPortfolioId}
           />
 
-{/* Navigation + Backup */}
-<div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
-  {/* Navigation à gauche */}
-  <div className="flex flex-wrap gap-2">
-    <Link to="/">
-      <Button
-        variant={location.pathname === "/" ? "default" : "ghost"}
-        className="gap-2"
-      >
-        <LayoutDashboard className="h-4 w-4" />
-        Tableau de bord
-      </Button>
-    </Link>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
+            <div className="flex flex-wrap gap-2">
+              <Link to="/"><Button variant={location.pathname === "/" ? "default" : "ghost"} className="gap-2"><LayoutDashboard className="h-4 w-4" />Tableau de bord</Button></Link>
+              <Link to="/transactions"><Button variant={location.pathname === "/transactions" ? "default" : "ghost"} className="gap-2"><Receipt className="h-4 w-4" />Transactions</Button></Link>
+              <Link to="/calculator"><Button variant={location.pathname === "/calculator" ? "default" : "ghost"} className="gap-2"><Calculator className="h-4 w-4" />Calculatrice</Button></Link>
+            </div>
 
-    <Link to="/transactions">
-      <Button
-        variant={location.pathname === "/transactions" ? "default" : "ghost"}
-        className="gap-2"
-      >
-        <Receipt className="h-4 w-4" />
-        Transactions
-      </Button>
-    </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleImport} />
+              <Button onClick={exportDatabase} className="gap-2"><Download className="h-4 w-4" />Exporter</Button>
 
-    <Link to="/calculator">
-      <Button
-        variant={location.pathname === "/calculator" ? "default" : "ghost"}
-        className="gap-2"
-      >
-        <Calculator className="h-4 w-4" />
-        Calculatrice
-      </Button>
-    </Link>
-  </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2"><HardDrive className="h-4 w-4" />Sauvegarde</Button>
+                </DropdownMenuTrigger>
 
-  {/* Backup à droite */}
-  <div className="flex flex-wrap items-center gap-2">
-    {/* input import caché */}
-    <input
-      ref={fileInputRef}
-      type="file"
-      accept="application/json"
-      className="hidden"
-      onChange={handleImport}
-    />
+                {autoBackupNeedsPermission && (
+                  <Button variant="outline" onClick={onReauthorizeAutoBackup} className="gap-2"><HardDrive className="h-4 w-4" />Réactiver</Button>
+                )}
 
-    <Button onClick={exportDatabase} className="gap-2">
-      <Download className="h-4 w-4" />
-      Exporter
-    </Button>
+                <span className={["ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium", autoBackupEnabled ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"].join(" ")}>
+                  Auto: {autoBackupEnabled ? "ON" : "OFF"}
+                </span>
 
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <HardDrive className="h-4 w-4" />
-          Sauvegarde
-        </Button>
-      </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />Importer un fichier…</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onEnableAutoBackup} className="gap-2"><HardDrive className="h-4 w-4" />Activer sauvegarde automatique</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onDisableAutoBackup} className="gap-2"><PauseCircle className="h-4 w-4" />Désactiver sauvegarde automatique</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleResetDatabase} className="gap-2 text-destructive focus:text-destructive"><RotateCcw className="h-4 w-4" />Réinitialiser…</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
 
-{autoBackupNeedsPermission && (
-  <Button variant="outline" onClick={onReauthorizeAutoBackup} className="gap-2">
-    <HardDrive className="h-4 w-4" />
-    Réactiver
-  </Button>
-)}
-
-    <span
-  className={[
-    "ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
-    autoBackupEnabled
-      ? "bg-emerald-100 text-emerald-700"
-      : "bg-muted text-muted-foreground",
-  ].join(" ")}
->
-  Auto: {autoBackupEnabled ? "ON" : "OFF"}
-</span>
-
-      <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuItem
-          onClick={() => fileInputRef.current?.click()}
-          className="gap-2"
-        >
-          <Upload className="h-4 w-4" />
-          Importer un fichier…
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem onClick={onEnableAutoBackup} className="gap-2">
-          <HardDrive className="h-4 w-4" />
-          Activer sauvegarde automatique
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={onDisableAutoBackup} className="gap-2">
-          <PauseCircle className="h-4 w-4" />
-          Désactiver sauvegarde automatique
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          onClick={handleResetDatabase}
-          className="gap-2 text-destructive focus:text-destructive"
-        >
-          <RotateCcw className="h-4 w-4" />
-          Réinitialiser…
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-
-
-  </div>
-</div>
-
-
-          {/* Contenu des pages */}
           <Outlet />
 
           <TransactionDialog

@@ -12,6 +12,7 @@ export function TransactionsPage() {
     currentData,
     currentPortfolio,
     handleAddTransaction,
+    handleImportTransactions,
     handleDeleteTransaction,
     handlePositionAction,
     handleUpdateCash,
@@ -20,12 +21,6 @@ export function TransactionsPage() {
     portfolios,
     currentPortfolioId,
   } = usePortfolio();
-
-  const handleImportTransactions = (transactions: any[]) => {
-    transactions.forEach(transaction => {
-      handleAddTransaction(transaction);
-    });
-  };
 
   // En vue consolidée, utiliser EUR comme devise par défaut et vérifier si au moins un portefeuille est de type Trading
   const isConsolidatedView = currentPortfolioId === "ALL";

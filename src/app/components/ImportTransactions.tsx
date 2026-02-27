@@ -77,7 +77,7 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
     const add = (s: string) => lines.push(s);
 
     txs.forEach((t, i) => {
-      const lineNo = i + 2; // +2: ligne 1 = entêtes
+      const lineNo = i + 2;
       const code = (t.code || "").trim().toUpperCase();
 
       if (!t.date || !code) {
@@ -97,16 +97,16 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
 
       if (t.type === "vente") {
         if (prev <= 0) {
-          add(`Ligne ${lineNo} (${code}): VENTE sans achat préalable dans ce fichier.`);
+          add(`Ligne ${lineNo} (${code}): ⚠️ VENTE sans achat préalable dans ce fichier (position existante ?).`);
         } else if (t.quantity > prev) {
-          add(`Ligne ${lineNo} (${code}): VENTE (${t.quantity}) > achats cumulés dans ce fichier (${prev}).`);
+          add(`Ligne ${lineNo} (${code}): ⚠️ VENTE (${t.quantity}) > achats cumulés dans ce fichier (${prev}).`);
         }
         boughtQtyByCode.set(code, Math.max(0, prev - t.quantity));
       }
     });
 
-    if (lines.length === 0) return "✅ Aucun problème détecté dans le fichier (pré-contrôle).";
-    return ["⚠️ Rapport de pré-contrôle (basé sur le fichier importé)", ...lines].join("\n");
+    if (lines.length === 0) return "✅ Aucun problème détecté dans le fichier.";
+    return ["⚠️ Rapport de pré-contrôle (informatif uniquement, l'import continue)", ...lines].join("\n");
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -231,30 +231,23 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
           })
           .filter((t) => t.code && t.date);
 
-      // Trier par date avant import
-const sorted = [...transactions].sort(
-  (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-);
+        // Trier par date avant import (achats avant ventes à date égale)
+        const sorted = [...transactions].sort((a, b) => {
+          const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          // À date égale : achats en premier
+          if (a.type === "achat" && b.type !== "achat") return -1;
+          if (a.type !== "achat" && b.type === "achat") return 1;
+          return 0;
+        });
 
-// Rapport informatif uniquement (ne bloque plus)
-const rep = buildValidationReport(sorted);
-setReport(rep);
-setError("");
-
-try {
-  await onImportTransactions(sorted);
-  setOpen(false);
-  resetForm();
-} catch (e) {
-  const msg = e instanceof Error ? e.message : String(e);
-  setError("Import échoué: " + msg);
-}
-
-
-
+        // Rapport informatif uniquement — ne bloque PAS l'import
+        const rep = buildValidationReport(sorted);
+        setReport(rep);
         setError("");
+
         try {
-          await onImportTransactions(transactions);
+          await onImportTransactions(sorted);
           setOpen(false);
           resetForm();
         } catch (e) {
@@ -349,7 +342,9 @@ try {
             <div className="space-y-4">
               <div className="space-y-3">
                 <h4 className="font-medium">Mapper les colonnes du fichier CSV</h4>
-                <p className="text-sm text-muted-foreground">Associez chaque colonne de votre fichier aux champs requis</p>
+                <p className="text-sm text-muted-foreground">
+                  Associez chaque colonne de votre fichier aux champs requis
+                </p>
 
                 {fields.map((field) => (
                   <div key={field.key} className="flex items-center gap-3">
