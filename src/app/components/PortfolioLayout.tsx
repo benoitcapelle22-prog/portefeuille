@@ -483,7 +483,8 @@ const onReauthorizeAutoBackup = async () => {
   const handlePurchase = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
     // Obtenir les données du portefeuille cible
     const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
-    const existingPosition = targetData.positions.find(p => p.code === transaction.code);
+    const txCode = (transaction.code || "").trim().toUpperCase();
+    const existingPosition = targetData.positions.find(p => (p.code || "").trim().toUpperCase() === txCode);
     
     // Convertir le montant dans la devise du portefeuille
     const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
@@ -552,10 +553,11 @@ const onReauthorizeAutoBackup = async () => {
     const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
     const existingPosition = targetData.positions.find(p => p.code === transaction.code);
 
-    if (!existingPosition) {
-      alert("Erreur: Aucune position trouvée pour ce code");
-      return;
-    }
+if (!existingPosition) {
+  console.warn(`Vente ignorée : aucune position trouvée pour ${transaction.code}`);
+  await updateCurrentPortfolioData({ transactions: newTransactions });
+  return;
+}
 
     if (existingPosition.quantity < transaction.quantity) {
       alert("Erreur: Quantité insuffisante pour la vente");
