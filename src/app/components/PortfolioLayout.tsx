@@ -1,16 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { Outlet, Link, useLocation } from "react-router";
 import { PortfolioSelector, Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
 import { Position } from "./CurrentPositions";
 import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
-import { TrendingUp, LayoutDashboard, Receipt, Calculator } from "lucide-react";
+import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw } from "lucide-react";
 import { Button } from "./ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,} from "./ui/dropdown-menu";
+import { Separator } from "./ui/separator";
 import { db, migrateFromLocalStorage, getCurrentPortfolioId, setCurrentPortfolioId as saveCurrentPortfolioId, DBTransaction, DBPosition, DBClosedPosition } from "../db";
 import { useLiveQuery } from "dexie-react-hooks";
-import { exportDatabase, importDatabase } from "../utils/backup";
-import { useRef } from "react";
+import { exportDatabase, importDatabase, pickAutoBackupFile, startAutoBackupToFile, stopAutoBackup, saveAutoBackupSetting, clearAutoBackupSetting, loadAutoBackupSetting } from "../utils/backup";
+
+
 
 export interface PortfolioData {
   transactions: Transaction[];
@@ -39,7 +42,6 @@ export interface PortfolioContextType {
 }
 
 // Contexte pour partager les données entre les pages
-import { createContext, useContext } from "react";
 
 const PortfolioContext = createContext<PortfolioContextType | null>(null);
 
@@ -63,6 +65,8 @@ export function PortfolioLayout() {
     portfolioId?: string; // Ajouter l'ID du portefeuille
   }>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
 const handleResetDatabase = async () => {
@@ -122,6 +126,92 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     e.target.value = "";
   }
 };
+
+// ✅ AJOUT ICI : auto-backup
+
+const onEnableAutoBackup = async () => {
+  try {
+    const handle = await pickAutoBackupFile();
+   
+        // 🔹 Sauvegarder dans settings
+    await saveAutoBackupSetting(handle);
+
+    startAutoBackupToFile(handle, { intervalMs: 5 * 60 * 1000  }); // 5 minutes
+    setAutoBackupEnabled(true);
+    alert("✅ Sauvegarde automatique activée.");
+  } catch (err) {
+    console.error(err);
+    setAutoBackupEnabled(false);
+    alert(err instanceof Error ? `❌ ${err.message}`: "❌ Impossible d’activer la sauvegarde automatique.");
+  }
+};
+
+const onDisableAutoBackup = async () => {
+  try {
+    stopAutoBackup();
+    setAutoBackupEnabled(false);
+
+     await clearAutoBackupSetting();
+
+    alert("🛑 Sauvegarde automatique désactivée.");
+  } catch (err) {
+    console.error(err);
+    alert("❌ Impossible de désactiver la sauvegarde automatique.");
+  }
+};
+
+useEffect(() => {
+  const initAutoBackup = async () => {
+    const setting = await loadAutoBackupSetting();
+    if (!setting || !setting.enabled || !setting.fileHandle) 
+      {
+      setAutoBackupEnabled(false);
+      setAutoBackupNeedsPermission(false);
+      return;
+      }
+
+    try {
+      const perm = await setting.fileHandle.queryPermission({ mode: "readwrite" });
+            if (perm === "granted") {
+        startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
+        setAutoBackupEnabled(true);
+        setAutoBackupNeedsPermission(false);
+      } else {
+        // On sait que c’est activé, mais il faut un clic utilisateur pour réautoriser
+        setAutoBackupEnabled(false);
+        setAutoBackupNeedsPermission(true);
+      }
+    } catch (err) {
+      console.error("Auto-backup restore failed:", err);
+      setAutoBackupEnabled(false);
+      setAutoBackupNeedsPermission(true);
+    }
+  };
+
+  initAutoBackup();
+}, []);
+
+const onReauthorizeAutoBackup = async () => {
+  const setting = await loadAutoBackupSetting();
+  if (!setting || !setting.enabled || !setting.fileHandle) return;
+
+  try {
+    const request = await setting.fileHandle.requestPermission({ mode: "readwrite" });
+    if (request !== "granted") {
+      alert("❌ Permission refusée. Impossible de réactiver la sauvegarde automatique.");
+      return;
+    }
+
+    startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
+    setAutoBackupEnabled(true);
+    setAutoBackupNeedsPermission(false);
+    alert("✅ Sauvegarde automatique réactivée.");
+  } catch (err) {
+    console.error(err);
+    alert("❌ Impossible de réactiver la sauvegarde automatique.");
+  }
+};
+
 
   // Charger les données depuis IndexedDB avec Dexie
   const portfolios = useLiveQuery(() => db.portfolios.toArray(), []);
@@ -890,10 +980,9 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
           />
 
 {/* Navigation + Backup */}
-<div className="flex justify-between items-center border-b pb-2">
-  
+<div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
   {/* Navigation à gauche */}
-  <div className="flex gap-2">
+  <div className="flex flex-wrap gap-2">
     <Link to="/">
       <Button
         variant={location.pathname === "/" ? "default" : "ghost"}
@@ -926,26 +1015,80 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   </div>
 
   {/* Backup à droite */}
-  <div className="flex gap-2">
+  <div className="flex flex-wrap items-center gap-2">
+    {/* input import caché */}
     <input
       ref={fileInputRef}
       type="file"
       accept="application/json"
-      style={{ display: "none" }}
+      className="hidden"
       onChange={handleImport}
-      />
+    />
 
-    <Button variant="outline" onClick={exportDatabase}>
+    <Button onClick={exportDatabase} className="gap-2">
+      <Download className="h-4 w-4" />
       Exporter
     </Button>
 
-    <Button onClick={() => fileInputRef.current?.click()}>
-      Importer
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="gap-2">
+          <HardDrive className="h-4 w-4" />
+          Sauvegarde
+        </Button>
+      </DropdownMenuTrigger>
 
-      <Button variant="destructive" onClick={handleResetDatabase} disabled>
-    Réinitialiser
+{autoBackupNeedsPermission && (
+  <Button variant="outline" onClick={onReauthorizeAutoBackup} className="gap-2">
+    <HardDrive className="h-4 w-4" />
+    Réactiver
   </Button>
+)}
+
+    <span
+  className={[
+    "ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
+    autoBackupEnabled
+      ? "bg-emerald-100 text-emerald-700"
+      : "bg-muted text-muted-foreground",
+  ].join(" ")}
+>
+  Auto: {autoBackupEnabled ? "ON" : "OFF"}
+</span>
+
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuItem
+          onClick={() => fileInputRef.current?.click()}
+          className="gap-2"
+        >
+          <Upload className="h-4 w-4" />
+          Importer un fichier…
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem onClick={onEnableAutoBackup} className="gap-2">
+          <HardDrive className="h-4 w-4" />
+          Activer sauvegarde automatique
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onClick={onDisableAutoBackup} className="gap-2">
+          <PauseCircle className="h-4 w-4" />
+          Désactiver sauvegarde automatique
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem
+          onClick={handleResetDatabase}
+          className="gap-2 text-destructive focus:text-destructive"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Réinitialiser…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+
 
   </div>
 </div>
