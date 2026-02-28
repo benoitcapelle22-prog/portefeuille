@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X } from "lucid
 import { useState } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+import { AaplQuoteWidget } from "./AaplQuoteWidget";
 
 // Palette de couleurs pour les graphiques
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#8DD1E1', '#D084D0', '#A4DE6C'];
