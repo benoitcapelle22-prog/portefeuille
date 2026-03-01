@@ -3,15 +3,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
-import { useState } from "react";
+import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil } from "lucide-react";
+import { useEffect, useState } from "react";
+import { EditDividendDialog, type DividendRow } from "./EditDividendDialog";
 
 interface DividendsHistoryProps {
   transactions: Transaction[];
   portfolioCurrency?: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
 }
 
-type SortKey = "date" | "code" | "name" | "unitPrice" | "quantity" | "currency" | "conversionRate" | "totalAmount" | "taxAmount" | "netAmount";
+type SortKey =
+  | "date"
+  | "code"
+  | "name"
+  | "unitPrice"
+  | "quantity"
+  | "currency"
+  | "conversionRate"
+  | "totalAmount"
+  | "taxAmount"
+  | "netAmount";
+
 type SortDir = "asc" | "desc";
 
 export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: DividendsHistoryProps) {
@@ -21,9 +33,20 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // ✅ local state pour refléter l’update sans dépendre du parent
+  const [localTransactions, setLocalTransactions] = useState<Transaction[]>(transactions);
+
+  // ✅ dialog edit dédiée dividende
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<DividendRow | null>(null);
+
+  useEffect(() => {
+    setLocalTransactions(transactions);
+  }, [transactions]);
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
       setSortDir("asc");
@@ -37,20 +60,22 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
 
   const Th = ({ col, children, className = "" }: { col: SortKey; children: React.ReactNode; className?: string }) => (
     <TableHead className={`cursor-pointer select-none hover:bg-muted/50 ${className}`} onClick={() => handleSort(col)}>
-      {children}<SortIcon col={col} />
+      {children}
+      <SortIcon col={col} />
     </TableHead>
   );
 
   const formatCurrency = (value: number, currency: string = portfolioCurrency) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(value);
+    new Intl.NumberFormat("fr-FR", { style: "currency", currency }).format(value);
 
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('fr-FR');
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("fr-FR");
 
-  const dividends = transactions.filter(t => t.type === "dividende");
+  const dividends = localTransactions.filter(t => t.type === "dividende");
 
   const filteredDividends = dividends.filter(dividend => {
     const searchLower = searchFilter.toLowerCase();
-    const matchesSearch = searchFilter === "" ||
+    const matchesSearch =
+      searchFilter === "" ||
       dividend.code.toLowerCase().includes(searchLower) ||
       dividend.name.toLowerCase().includes(searchLower);
     const divDate = new Date(dividend.date);
@@ -59,7 +84,6 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
     return matchesSearch && matchesStartDate && matchesEndDate;
   });
 
-  // Enrichir avec les montants calculés pour le tri
   const enriched = filteredDividends.map(d => ({
     ...d,
     totalAmount: (d.unitPrice * d.quantity) * d.conversionRate,
@@ -82,7 +106,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
       case "netAmount": aVal = a.netAmount; bVal = b.netAmount; break;
       default: aVal = ""; bVal = "";
     }
-    if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, 'fr') : bVal.localeCompare(aVal, 'fr');
+    if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, "fr") : bVal.localeCompare(aVal, "fr");
     return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
@@ -92,6 +116,24 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
 
   const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
   const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); };
+
+  const openEdit = (d: any) => {
+    const row: DividendRow = {
+      id: d.id,
+      date: d.date,
+      code: d.code,
+      name: d.name,
+      type: "dividende",
+      quantity: d.quantity,
+      unitPrice: d.unitPrice,
+      currency: d.currency,
+      conversionRate: d.conversionRate,
+      tax: d.tax ?? 0,
+      portfolioCode: d.portfolioCode ?? undefined,
+    };
+    setEditing(row);
+    setEditOpen(true);
+  };
 
   return (
     <Card>
@@ -138,14 +180,18 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                     <Th col="totalAmount" className="text-right">Montant brut</Th>
                     <Th col="taxAmount" className="text-right">Impôt</Th>
                     <Th col="netAmount" className="text-right">Montant net</Th>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
-                  {sortedDividends.map((dividend) => {
+                  {sortedDividends.map((dividend: any) => {
                     const hasPortfolioCodeColumn = transactions.some(t => t.portfolioCode);
                     return (
                       <TableRow key={dividend.id}>
-                        {hasPortfolioCodeColumn && <TableCell className="font-medium">{dividend.portfolioCode || '-'}</TableCell>}
+                        {hasPortfolioCodeColumn && (
+                          <TableCell className="font-medium">{dividend.portfolioCode || "-"}</TableCell>
+                        )}
                         <TableCell>{formatDate(dividend.date)}</TableCell>
                         <TableCell className="font-medium">{dividend.code}</TableCell>
                         <TableCell>{dividend.name}</TableCell>
@@ -156,12 +202,28 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.totalAmount)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.taxAmount)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.netAmount)}</TableCell>
+
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(dividend)}>
+                            <Pencil className="size-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
             </div>
+
+            {/* ✅ Dialog dédiée dividende */}
+            <EditDividendDialog
+              open={editOpen}
+              onOpenChange={setEditOpen}
+              dividend={editing}
+              onSaved={(updated) => {
+                setLocalTransactions(prev => prev.map(t => (t.id === updated.id ? (updated as any) : t)));
+              }}
+            />
 
             <div className="mt-4 flex justify-end">
               <div className="text-right">
