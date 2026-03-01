@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
 import { Outlet, Link, useLocation } from "react-router";
 import { PortfolioSelector, Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
@@ -7,11 +7,44 @@ import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
 import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw } from "lucide-react";
 import { Button } from "./ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,} from "./ui/dropdown-menu";
-import { Separator } from "./ui/separator";
-import { db, migrateFromLocalStorage, getCurrentPortfolioId, setCurrentPortfolioId as saveCurrentPortfolioId, DBTransaction, DBPosition, DBClosedPosition } from "../db";
-import { useLiveQuery } from "dexie-react-hooks";
-import { exportDatabase, importDatabase, pickAutoBackupFile, startAutoBackupToFile, stopAutoBackup, saveAutoBackupSetting, clearAutoBackupSetting, loadAutoBackupSetting } from "../utils/backup";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import {
+  getPortfolios,
+  getTransactions,
+  getPositions,
+  getClosedPositions,
+  createPortfolio as dbCreatePortfolio,
+  updatePortfolio as dbUpdatePortfolio,
+  deletePortfolio as dbDeletePortfolio,
+  addTransaction as dbAddTransaction,
+  deleteTransaction as dbDeleteTransaction,
+  deleteTransactionsByPortfolio,
+  upsertPosition,
+  bulkUpsertPositions,
+  deletePositionsByPortfolio,
+  deletePosition as dbDeletePosition,
+  addClosedPosition,
+  bulkAddClosedPositions,
+  deleteClosedPositionsByPortfolio,
+  getCurrentPortfolioId,
+  setCurrentPortfolioId as saveCurrentPortfolioId,
+  updatePortfolio,
+  bulkAddTransactions,
+  DBTransaction,
+  DBPosition,
+  DBClosedPosition,
+} from "../db";
+import { supabase } from "../supabase";
+import {
+  exportDatabase,
+  importDatabase,
+  pickAutoBackupFile,
+  startAutoBackupToFile,
+  stopAutoBackup,
+  saveAutoBackupSetting,
+  clearAutoBackupSetting,
+  loadAutoBackupSetting,
+} from "../utils/backup";
 
 export interface PortfolioData {
   transactions: Transaction[];
@@ -24,211 +57,85 @@ export interface PortfolioContextType {
   currentPortfolioId: string | null;
   currentPortfolio: Portfolio | undefined;
   currentData: PortfolioData;
-  handleCreatePortfolio: (portfolio: Omit<Portfolio, "id">) => void;
-  handleUpdatePortfolio: (id: string, portfolio: Omit<Portfolio, "id">) => void;
-  handleDeletePortfolio: (id: string) => void;
-  setCurrentPortfolioId: (id: string) => void;
-  handleAddTransaction: (transaction: Omit<Transaction, "id">, portfolioId?: string) => void;
+  handleCreatePortfolio: (portfolio: Omit<Portfolio, "id">) => Promise<void>;
+  handleUpdatePortfolio: (id: string, portfolio: Omit<Portfolio, "id">) => Promise<void>;
+  handleDeletePortfolio: (id: string) => Promise<void>;
+  setCurrentPortfolioId: (id: string) => Promise<void>;
+  handleAddTransaction: (transaction: Omit<Transaction, "id">, portfolioId?: string) => Promise<void>;
   handleImportTransactions: (transactions: Omit<Transaction, "id">[]) => Promise<void>;
-  handleDeleteTransaction: (id: string) => void;
+  handleDeleteTransaction: (id: string) => Promise<void>;
   handlePositionAction: (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => void;
-  handleUpdateCash: (amount: number, type: "deposit" | "withdrawal", date: string) => void;
-  handleUpdateStopLoss: (code: string, stopLoss: number | undefined) => void;
-  handleUpdateCurrentPrice: (code: string, manualCurrentPrice: number | undefined) => void;
+  handleUpdateCash: (amount: number, type: "deposit" | "withdrawal", date: string) => Promise<void>;
+  handleUpdateStopLoss: (code: string, stopLoss: number | undefined) => Promise<void>;
+  handleUpdateCurrentPrice: (code: string, manualCurrentPrice: number | undefined) => Promise<void>;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   dialogInitialData: any;
+  refreshData: () => Promise<void>;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | null>(null);
 
 export const usePortfolio = () => {
   const context = useContext(PortfolioContext);
-  if (!context) {
-    throw new Error("usePortfolio must be used within PortfolioLayout");
-  }
+  if (!context) throw new Error("usePortfolio must be used within PortfolioLayout");
   return context;
 };
 
 export function PortfolioLayout() {
   const location = useLocation();
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [currentPortfolioId, setCurrentPortfolioIdState] = useState<string | null>(null);
+  const [portfolioData, setPortfolioData] = useState<Record<string, PortfolioData>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogInitialData, setDialogInitialData] = useState<{
-    code?: string;
-    name?: string;
-    type?: "achat" | "vente" | "dividende";
-    quantity?: number;
-    portfolioId?: string;
-  }>({});
+  const [dialogInitialData, setDialogInitialData] = useState<any>({});
   const [isLoading, setIsLoading] = useState(true);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleResetDatabase = async () => {
-    const ok = window.confirm(
-      "⚠️ Cette action va supprimer définitivement toutes les données (portefeuilles, transactions, positions, paramètres).\n\nContinuer ?"
-    );
-    if (!ok) return;
-    try {
-      await db.transaction("rw", db.tables, async () => {
-        await Promise.all(db.tables.map((t) => t.clear()));
-      });
-      alert("✅ Base vidée. L'application va se recharger.");
-      window.location.reload();
-    } catch (err) {
-      console.error(err);
-      alert("❌ Impossible de vider la base.");
-    }
-  };
+  // ============================================================
+  // CHARGEMENT DES DONNÉES
+  // ============================================================
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const ok = window.confirm(
-      "⚠️ Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?"
-    );
-    if (!ok) {
-      e.target.value = "";
-      return;
-    }
+  const refreshData = useCallback(async () => {
     try {
-      const text = await file.text();
-      let data: any;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        alert("❌ Fichier invalide : ce n'est pas un JSON valide.");
-        e.target.value = "";
-        return;
+      const [allPortfolios, allTransactions, allPositions, allClosedPositions] = await Promise.all([
+        getPortfolios(),
+        getTransactions(),
+        getPositions(),
+        getClosedPositions(),
+      ]);
+
+      setPortfolios(allPortfolios);
+
+      const data: Record<string, PortfolioData> = {};
+      for (const portfolio of allPortfolios) {
+        const pid = portfolio.id;
+        const transactions: Transaction[] = allTransactions
+          .filter(t => t.portfolioId === pid)
+          .map(({ portfolioId, ...t }) => t as Transaction);
+        const positions: Position[] = allPositions
+          .filter(p => p.portfolioId === pid)
+          .map(({ portfolioId, id, ...p }) => p as Position);
+        const closedPositions: ClosedPosition[] = allClosedPositions
+          .filter(cp => cp.portfolioId === pid)
+          .map(({ portfolioId, id, ...cp }) => cp as ClosedPosition);
+        data[pid] = { transactions, positions, closedPositions };
       }
-      await importDatabase(data);
-      alert("✅ Import terminé !");
-      window.location.reload();
+      setPortfolioData(data);
     } catch (err) {
-      console.error(err);
-      alert("❌ Import impossible.\nLe fichier ne correspond pas à un export valide de l'application.");
-    } finally {
-      e.target.value = "";
+      console.error('Erreur chargement données:', err);
     }
-  };
-
-  const onEnableAutoBackup = async () => {
-    try {
-      const handle = await pickAutoBackupFile();
-      await saveAutoBackupSetting(handle);
-      startAutoBackupToFile(handle, { intervalMs: 5 * 60 * 1000 });
-      setAutoBackupEnabled(true);
-      alert("✅ Sauvegarde automatique activée.");
-    } catch (err) {
-      console.error(err);
-      setAutoBackupEnabled(false);
-      alert(err instanceof Error ? `❌ ${err.message}` : "❌ Impossible d'activer la sauvegarde automatique.");
-    }
-  };
-
-  const onDisableAutoBackup = async () => {
-    try {
-      stopAutoBackup();
-      setAutoBackupEnabled(false);
-      await clearAutoBackupSetting();
-      alert("🛑 Sauvegarde automatique désactivée.");
-    } catch (err) {
-      console.error(err);
-      alert("❌ Impossible de désactiver la sauvegarde automatique.");
-    }
-  };
-
-  useEffect(() => {
-    const initAutoBackup = async () => {
-      const setting = await loadAutoBackupSetting();
-      if (!setting || !setting.enabled || !setting.fileHandle) {
-        setAutoBackupEnabled(false);
-        setAutoBackupNeedsPermission(false);
-        return;
-      }
-      try {
-        const perm = await setting.fileHandle.queryPermission({ mode: "readwrite" });
-        if (perm === "granted") {
-          startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
-          setAutoBackupEnabled(true);
-          setAutoBackupNeedsPermission(false);
-        } else {
-          setAutoBackupEnabled(false);
-          setAutoBackupNeedsPermission(true);
-        }
-      } catch (err) {
-        console.error("Auto-backup restore failed:", err);
-        setAutoBackupEnabled(false);
-        setAutoBackupNeedsPermission(true);
-      }
-    };
-    initAutoBackup();
   }, []);
 
-  const onReauthorizeAutoBackup = async () => {
-    const setting = await loadAutoBackupSetting();
-    if (!setting || !setting.enabled || !setting.fileHandle) return;
-    try {
-      const request = await setting.fileHandle.requestPermission({ mode: "readwrite" });
-      if (request !== "granted") {
-        alert("❌ Permission refusée. Impossible de réactiver la sauvegarde automatique.");
-        return;
-      }
-      startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
-      setAutoBackupEnabled(true);
-      setAutoBackupNeedsPermission(false);
-      alert("✅ Sauvegarde automatique réactivée.");
-    } catch (err) {
-      console.error(err);
-      alert("❌ Impossible de réactiver la sauvegarde automatique.");
-    }
-  };
-
-  const portfolios = useLiveQuery(() => db.portfolios.toArray(), []);
-  const allTransactions = useLiveQuery(() => db.transactions.toArray(), []);
-  const allPositions = useLiveQuery(() => db.positions.toArray(), []);
-  const allClosedPositions = useLiveQuery(() => db.closedPositions.toArray(), []);
-
-  const portfolioData: Record<string, PortfolioData> = {};
-  if (portfolios && allTransactions && allPositions && allClosedPositions) {
-    portfolios.forEach(portfolio => {
-      const portfolioTransactions = allTransactions
-        .filter(t => t.portfolioId === portfolio.id)
-        .map(t => {
-          const { portfolioId, ...transaction } = t;
-          return transaction as Transaction;
-        });
-      const portfolioPositions = allPositions
-        .filter(p => p.portfolioId === portfolio.id)
-        .map(p => {
-          const { portfolioId, id, ...position } = p;
-          return position as Position;
-        });
-      const portfolioClosedPositions = allClosedPositions
-        .filter(cp => cp.portfolioId === portfolio.id)
-        .map(cp => {
-          const { portfolioId, id, ...closedPosition } = cp;
-          return closedPosition as ClosedPosition;
-        });
-      portfolioData[portfolio.id] = {
-        transactions: portfolioTransactions,
-        positions: portfolioPositions,
-        closedPositions: portfolioClosedPositions,
-      };
-    });
-  }
-
   useEffect(() => {
-    const initDB = async () => {
+    const init = async () => {
       try {
-        const migrated = await migrateFromLocalStorage();
-        if (migrated) {
-          console.log('Données migrées depuis localStorage vers IndexedDB');
-        }
+        await refreshData();
         const savedCurrentId = await getCurrentPortfolioId();
-        const loadedPortfolios = await db.portfolios.toArray();
+        const loadedPortfolios = await getPortfolios();
+
         if (savedCurrentId && loadedPortfolios.find(p => p.id === savedCurrentId)) {
           setCurrentPortfolioIdState(savedCurrentId);
         } else if (loadedPortfolios.length > 0) {
@@ -243,32 +150,171 @@ export function PortfolioLayout() {
             fees: { defaultFeesPercent: 0, defaultFeesMin: 0, defaultTFF: 0 },
             cash: 0,
           };
-          await db.portfolios.add(defaultPortfolio);
+          await dbCreatePortfolio(defaultPortfolio);
           setCurrentPortfolioIdState(defaultPortfolio.id);
           await saveCurrentPortfolioId(defaultPortfolio.id);
+          await refreshData();
         }
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Erreur lors de l\'initialisation de la base de données:', error);
+      } catch (err) {
+        console.error('Erreur initialisation:', err);
+      } finally {
         setIsLoading(false);
       }
     };
-    initDB();
+    init();
   }, []);
+
+  // ============================================================
+  // AUTO BACKUP
+  // ============================================================
+
+  useEffect(() => {
+    const initAutoBackup = async () => {
+      const setting = await loadAutoBackupSetting();
+      if (!setting || !setting.enabled || !setting.fileHandle) {
+        setAutoBackupEnabled(false);
+        setAutoBackupNeedsPermission(false);
+        return;
+      }
+      try {
+        const perm = await setting.fileHandle.queryPermission({ mode: "readwrite" });
+        if (perm === "granted") {
+          startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
+          setAutoBackupEnabled(true);
+        } else {
+          setAutoBackupEnabled(false);
+          setAutoBackupNeedsPermission(true);
+        }
+      } catch {
+        setAutoBackupEnabled(false);
+        setAutoBackupNeedsPermission(true);
+      }
+    };
+    initAutoBackup();
+  }, []);
+
+  const onEnableAutoBackup = async () => {
+    try {
+      const handle = await pickAutoBackupFile();
+      await saveAutoBackupSetting(handle);
+      startAutoBackupToFile(handle, { intervalMs: 5 * 60 * 1000 });
+      setAutoBackupEnabled(true);
+      alert("✅ Sauvegarde automatique activée.");
+    } catch (err) {
+      setAutoBackupEnabled(false);
+      alert(err instanceof Error ? `❌ ${err.message}` : "❌ Impossible d'activer la sauvegarde automatique.");
+    }
+  };
+
+  const onDisableAutoBackup = async () => {
+    try {
+      stopAutoBackup();
+      setAutoBackupEnabled(false);
+      await clearAutoBackupSetting();
+      alert("🛑 Sauvegarde automatique désactivée.");
+    } catch {
+      alert("❌ Impossible de désactiver la sauvegarde automatique.");
+    }
+  };
+
+  const onReauthorizeAutoBackup = async () => {
+    const setting = await loadAutoBackupSetting();
+    if (!setting?.fileHandle) return;
+    try {
+      const request = await setting.fileHandle.requestPermission({ mode: "readwrite" });
+      if (request !== "granted") { alert("❌ Permission refusée."); return; }
+      startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
+      setAutoBackupEnabled(true);
+      setAutoBackupNeedsPermission(false);
+      alert("✅ Sauvegarde automatique réactivée.");
+    } catch {
+      alert("❌ Impossible de réactiver la sauvegarde automatique.");
+    }
+  };
+
+  // ============================================================
+  // IMPORT / RESET
+  // ============================================================
+
+  const handleResetDatabase = async () => {
+    const ok = window.confirm("⚠️ Supprimer toutes les données ?\n\nContinuer ?");
+    if (!ok) return;
+    try {
+      const allPortfolios = await getPortfolios();
+      for (const p of allPortfolios) {
+        await dbDeletePortfolio(p.id); // cascade supprime tout
+      }
+      await supabase.from('settings').delete().neq('key', '__never__');
+      alert("✅ Base vidée. L'application va se recharger.");
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert("❌ Impossible de vider la base.");
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ok = window.confirm("⚠️ Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?");
+    if (!ok) { e.target.value = ""; return; }
+    try {
+      const text = await file.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch {
+        alert("❌ Fichier invalide : ce n'est pas un JSON valide.");
+        e.target.value = "";
+        return;
+      }
+      await importDatabase(data);
+      alert("✅ Import terminé !");
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert("❌ Import impossible.");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  // ============================================================
+  // PORTEFEUILLES
+  // ============================================================
 
   const setCurrentPortfolioId = async (id: string) => {
     setCurrentPortfolioIdState(id);
     await saveCurrentPortfolioId(id);
   };
 
-  const currentData: PortfolioData = currentPortfolioId && portfolioData[currentPortfolioId]
-    ? portfolioData[currentPortfolioId]
-    : { transactions: [], positions: [], closedPositions: [] };
+  const handleCreatePortfolio = async (portfolio: Omit<Portfolio, "id">) => {
+    const newPortfolio: Portfolio = { id: crypto.randomUUID(), ...portfolio, cash: 0 };
+    await dbCreatePortfolio(newPortfolio);
+    await refreshData();
+    await setCurrentPortfolioId(newPortfolio.id);
+  };
 
-  const currentPortfolio = portfolios?.find(p => p.id === currentPortfolioId);
+  const handleUpdatePortfolio = async (id: string, portfolio: Omit<Portfolio, "id">) => {
+    const existing = portfolios.find(p => p.id === id);
+    await dbUpdatePortfolio(id, { ...portfolio, cash: existing?.cash ?? 0 });
+    await refreshData();
+  };
 
-  const getCurrentData = (): PortfolioData => {
-    if (!portfolios) return { transactions: [], positions: [], closedPositions: [] };
+  const handleDeletePortfolio = async (id: string) => {
+    await dbDeletePortfolio(id);
+    const remaining = await getPortfolios();
+    await refreshData();
+    if (currentPortfolioId === id) {
+      if (remaining.length > 0) await setCurrentPortfolioId(remaining[0].id);
+      else setCurrentPortfolioIdState(null);
+    }
+  };
+
+  // ============================================================
+  // DONNÉES COURANTES
+  // ============================================================
+
+  const currentData: PortfolioData = (() => {
+    if (!currentPortfolioId) return { transactions: [], positions: [], closedPositions: [] };
     if (currentPortfolioId === "ALL") {
       const allTx: Transaction[] = [];
       const allPos: Position[] = [];
@@ -276,106 +322,94 @@ export function PortfolioLayout() {
       portfolios.forEach(portfolio => {
         const data = portfolioData[portfolio.id];
         if (!data) return;
-        const portfolioIdentifier = portfolio.code || portfolio.name;
-        data.transactions.forEach(transaction => {
-          allTx.push({ ...transaction, portfolioCode: portfolioIdentifier });
-        });
-        data.positions.forEach(position => {
-          allPos.push({ ...position, portfolioCode: portfolioIdentifier, portfolioId: portfolio.id });
-        });
-        data.closedPositions.forEach(closedPosition => {
-          allClosed.push({ ...closedPosition, portfolioCode: portfolioIdentifier });
-        });
+        const id = portfolio.code || portfolio.name;
+        data.transactions.forEach(t => allTx.push({ ...t, portfolioCode: id }));
+        data.positions.forEach(p => allPos.push({ ...p, portfolioCode: id, portfolioId: portfolio.id }));
+        data.closedPositions.forEach(cp => allClosed.push({ ...cp, portfolioCode: id }));
       });
       return { transactions: allTx, positions: allPos, closedPositions: allClosed };
     }
-    return currentPortfolioId && portfolioData[currentPortfolioId]
-      ? portfolioData[currentPortfolioId]
-      : { transactions: [], positions: [], closedPositions: [] };
-  };
+    return portfolioData[currentPortfolioId] ?? { transactions: [], positions: [], closedPositions: [] };
+  })();
 
-  const consolidatedData = getCurrentData();
+  const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
 
-  const updateCurrentPortfolioData = async (data: Partial<PortfolioData>, targetPortfolioId?: string) => {
-    const portfolioId = targetPortfolioId || currentPortfolioId;
-    if (!portfolioId || portfolioId === "ALL") return;
-    try {
-      if (data.transactions) {
-        await db.transactions.where('portfolioId').equals(portfolioId).delete();
-        const dbTransactions: DBTransaction[] = data.transactions.map(t => ({ ...t, portfolioId }));
-        await db.transactions.bulkAdd(dbTransactions);
-      }
-      if (data.positions) {
-        await db.positions.where('portfolioId').equals(portfolioId).delete();
-        const dbPositions: DBPosition[] = data.positions.map(p => ({ ...p, portfolioId }));
-        await db.positions.bulkAdd(dbPositions);
-      }
-      if (data.closedPositions) {
-        await db.closedPositions.where('portfolioId').equals(portfolioId).delete();
-        const dbClosedPositions: DBClosedPosition[] = data.closedPositions.map(cp => ({ ...cp, portfolioId }));
-        await db.closedPositions.bulkAdd(dbClosedPositions);
-      }
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour des données:', error);
-    }
-  };
+  // ============================================================
+  // TRANSACTIONS
+  // ============================================================
 
-  const handleCreatePortfolio = async (portfolio: Omit<Portfolio, "id">) => {
-    const newPortfolio: Portfolio = { id: crypto.randomUUID(), ...portfolio, cash: 0 };
-    try {
-      await db.portfolios.add(newPortfolio);
-      await setCurrentPortfolioId(newPortfolio.id);
-    } catch (error) {
-      console.error('Erreur lors de la création du portefeuille:', error);
-    }
-  };
+  const handleAddTransaction = async (transaction: Omit<Transaction, "id">, portfolioId?: string) => {
+    const targetId = portfolioId || currentPortfolioId;
+    if (!targetId) return;
 
-  const handleUpdatePortfolio = async (id: string, portfolio: Omit<Portfolio, "id">) => {
-    try {
-      const existingPortfolio = await db.portfolios.get(id);
-      if (existingPortfolio) {
-        await db.portfolios.update(id, { ...portfolio, cash: existingPortfolio.cash });
-      }
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour du portefeuille:', error);
-    }
-  };
+    const newTx: DBTransaction = { ...transaction, id: crypto.randomUUID(), portfolioId: targetId };
+    await dbAddTransaction(newTx);
 
-  const handleDeletePortfolio = async (id: string) => {
-    try {
-      await db.portfolios.delete(id);
-      await db.transactions.where('portfolioId').equals(id).delete();
-      await db.positions.where('portfolioId').equals(id).delete();
-      await db.closedPositions.where('portfolioId').equals(id).delete();
-      const remainingPortfolios = await db.portfolios.toArray();
-      if (currentPortfolioId === id) {
-        if (remainingPortfolios.length > 0) {
-          await setCurrentPortfolioId(remainingPortfolios[0].id);
-        } else {
-          setCurrentPortfolioIdState(null);
-        }
-      }
-    } catch (error) {
-      console.error('Erreur lors de la suppression du portefeuille:', error);
-    }
-  };
+    const targetData = portfolioData[targetId] ?? { transactions: [], positions: [], closedPositions: [] };
+    const newTransactions = [...targetData.transactions, { ...transaction, id: newTx.id }];
 
-  const handleAddTransaction = (transaction: Omit<Transaction, "id">, portfolioId?: string) => {
-    const targetPortfolioId = portfolioId || currentPortfolioId;
-    if (!targetPortfolioId) return;
-    const newTransaction: Transaction = { ...transaction, id: crypto.randomUUID() };
-    const targetData = portfolioData[targetPortfolioId] || { transactions: [], positions: [], closedPositions: [] };
-    const newTransactions = [...targetData.transactions, newTransaction];
     if (transaction.type === "achat") {
-      handlePurchase(newTransaction, newTransactions, targetPortfolioId);
+      await handlePurchase(newTx, targetData, targetId);
     } else if (transaction.type === "vente") {
-      handleSale(newTransaction, newTransactions, targetPortfolioId);
+      await handleSale(newTx, newTransactions, targetData, targetId);
     } else if (transaction.type === "dividende") {
-      handleDividend(newTransaction, newTransactions, targetPortfolioId);
+      await handleDividend(newTx, targetId);
+    }
+
+    await refreshData();
+  };
+
+  const handlePurchase = async (tx: DBTransaction, targetData: PortfolioData, portfolioId: string) => {
+    const txCode = (tx.code || "").trim().toUpperCase();
+    const convertedUnitPrice = tx.unitPrice * (tx.conversionRate || 1);
+    const totalCost = tx.quantity * convertedUnitPrice + (tx.fees || 0) + (tx.tff || 0);
+
+    const portfolio = portfolios.find(p => p.id === portfolioId);
+    if (portfolio) await dbUpdatePortfolio(portfolioId, { cash: (portfolio.cash || 0) - totalCost });
+
+    const existing = targetData.positions.find(p => (p.code || "").trim().toUpperCase() === txCode);
+    if (existing) {
+      const newTotalCost = existing.totalCost + totalCost;
+      const newQuantity = existing.quantity + tx.quantity;
+      await upsertPosition({ portfolioId, code: tx.code, name: tx.name, quantity: newQuantity, totalCost: newTotalCost, pru: newTotalCost / newQuantity, currency: tx.currency, stopLoss: existing.stopLoss, manualCurrentPrice: existing.manualCurrentPrice, sector: tx.sector });
+    } else {
+      await upsertPosition({ id: crypto.randomUUID(), portfolioId, code: tx.code, name: tx.name, quantity: tx.quantity, totalCost, pru: totalCost / tx.quantity, currency: tx.currency, sector: tx.sector });
     }
   };
 
-  // ✅ NOUVELLE FONCTION : import en une seule passe, lit directement la DB
+  const handleSale = async (tx: DBTransaction, newTransactions: Transaction[], targetData: PortfolioData, portfolioId: string) => {
+    const existing = targetData.positions.find(p => p.code === tx.code);
+    if (!existing) { console.warn(`Vente ignorée : aucune position pour ${tx.code}`); return; }
+    if (existing.quantity < tx.quantity) { alert("Erreur: Quantité insuffisante pour la vente"); return; }
+
+    const convertedUnitPrice = tx.unitPrice * (tx.conversionRate || 1);
+    const totalSale = tx.quantity * convertedUnitPrice - (tx.fees || 0) - (tx.tff || 0);
+    const totalPurchase = tx.quantity * existing.pru;
+    const gainLoss = totalSale - totalPurchase;
+
+    const portfolio = portfolios.find(p => p.id === portfolioId);
+    if (portfolio) await dbUpdatePortfolio(portfolioId, { cash: (portfolio.cash || 0) + totalSale });
+
+    const purchaseTx = newTransactions.filter(t => t.code === tx.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+    const purchaseDate = new Date(purchaseTx?.date || tx.date);
+    const saleDate = new Date(tx.date);
+    const dividends = newTransactions.filter(t => t.code === tx.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
+
+    await addClosedPosition({ id: crypto.randomUUID(), portfolioId, code: tx.code, name: tx.name, purchaseDate: purchaseTx?.date || tx.date, saleDate: tx.date, quantity: tx.quantity, pru: existing.pru, averageSalePrice: totalSale / tx.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existing.sector });
+
+    const newQuantity = existing.quantity - tx.quantity;
+    if (newQuantity === 0) await dbDeletePosition(portfolioId, tx.code);
+    else await upsertPosition({ portfolioId, code: tx.code, name: existing.name, quantity: newQuantity, totalCost: existing.totalCost - totalPurchase, pru: existing.pru, currency: existing.currency, stopLoss: existing.stopLoss, manualCurrentPrice: existing.manualCurrentPrice, sector: existing.sector });
+  };
+
+  const handleDividend = async (tx: DBTransaction, portfolioId: string) => {
+    const portfolio = portfolios.find(p => p.id === portfolioId);
+    if (portfolio) {
+      const dividendAmount = (tx.unitPrice * tx.quantity * (tx.conversionRate || 1)) - (tx.tax || 0);
+      await dbUpdatePortfolio(portfolioId, { cash: (portfolio.cash || 0) + dividendAmount });
+    }
+  };
+
   const handleImportTransactions = async (transactions: Omit<Transaction, "id">[]): Promise<void> => {
     const targetPortfolioId = currentPortfolioId;
     if (!targetPortfolioId || targetPortfolioId === "ALL") {
@@ -383,288 +417,115 @@ export function PortfolioLayout() {
       return;
     }
 
-    // Lire l'état actuel directement depuis la DB (pas depuis portfolioData figé)
-    const existingTransactions = await db.transactions.where('portfolioId').equals(targetPortfolioId).toArray();
-    const existingPositions = await db.positions.where('portfolioId').equals(targetPortfolioId).toArray();
-    const existingClosedPositions = await db.closedPositions.where('portfolioId').equals(targetPortfolioId).toArray();
+    const [existingTxs, existingPos, existingClosed] = await Promise.all([
+      getTransactions(targetPortfolioId),
+      getPositions(targetPortfolioId),
+      getClosedPositions(targetPortfolioId),
+    ]);
 
-    // Copies locales mutables — on les met à jour au fil des transactions
-    const allTx: DBTransaction[] = [...existingTransactions];
-    const positions: DBPosition[] = [...existingPositions];
-    const closedPositions: DBClosedPosition[] = [...existingClosedPositions];
+    const allTx: DBTransaction[] = [...existingTxs];
+    const positions: DBPosition[] = [...existingPos];
+    const closedPositions: DBClosedPosition[] = [...existingClosed];
 
     for (const tx of transactions) {
-      const newTx: DBTransaction = {
-        ...tx,
-        id: crypto.randomUUID(),
-        portfolioId: targetPortfolioId,
-      };
+      const newTx: DBTransaction = { ...tx, id: crypto.randomUUID(), portfolioId: targetPortfolioId };
       allTx.push(newTx);
-
       const txCode = (tx.code || "").trim().toUpperCase();
       const convertedUnitPrice = tx.unitPrice * (tx.conversionRate || 1);
 
       if (tx.type === "achat") {
         const idx = positions.findIndex(p => (p.code || "").trim().toUpperCase() === txCode);
         const totalCost = tx.quantity * convertedUnitPrice + (tx.fees || 0) + (tx.tff || 0);
-
         if (idx >= 0) {
           const pos = positions[idx];
           const newTotalCost = pos.totalCost + totalCost;
           const newQuantity = pos.quantity + tx.quantity;
-          positions[idx] = {
-            ...pos,
-            quantity: newQuantity,
-            totalCost: newTotalCost,
-            pru: newTotalCost / newQuantity,
-            currency: tx.currency,
-          };
+          positions[idx] = { ...pos, quantity: newQuantity, totalCost: newTotalCost, pru: newTotalCost / newQuantity, currency: tx.currency };
         } else {
-          positions.push({
-            id: crypto.randomUUID(),
-            portfolioId: targetPortfolioId,
-            code: tx.code,
-            name: tx.name,
-            quantity: tx.quantity,
-            totalCost,
-            pru: totalCost / tx.quantity,
-            currency: tx.currency,
-            sector: tx.sector,
-          });
+          positions.push({ id: crypto.randomUUID(), portfolioId: targetPortfolioId, code: tx.code, name: tx.name, quantity: tx.quantity, totalCost, pru: totalCost / tx.quantity, currency: tx.currency, sector: tx.sector });
         }
-
       } else if (tx.type === "vente") {
         const idx = positions.findIndex(p => (p.code || "").trim().toUpperCase() === txCode);
-
-        if (idx < 0) {
-          console.warn(`Import: vente ignorée, aucune position pour ${txCode}`);
-          continue;
-        }
-
+        if (idx < 0) { console.warn(`Import: vente ignorée, aucune position pour ${txCode}`); continue; }
         const pos = positions[idx];
-        if (pos.quantity < tx.quantity) {
-          console.warn(`Import: vente ignorée, quantité insuffisante pour ${txCode} (stock: ${pos.quantity}, vente: ${tx.quantity})`);
-          continue;
-        }
-
+        if (pos.quantity < tx.quantity) { console.warn(`Import: quantité insuffisante pour ${txCode}`); continue; }
         const totalSale = tx.quantity * convertedUnitPrice - (tx.fees || 0) - (tx.tff || 0);
         const totalPurchase = tx.quantity * pos.pru;
         const gainLoss = totalSale - totalPurchase;
-
-        const purchaseTx = allTx
-          .filter(t => (t.code || "").trim().toUpperCase() === txCode && t.type === "achat")
-          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-
-        closedPositions.push({
-          id: crypto.randomUUID(),
-          portfolioId: targetPortfolioId,
-          code: tx.code,
-          name: tx.name,
-          purchaseDate: purchaseTx?.date || tx.date,
-          saleDate: tx.date,
-          quantity: tx.quantity,
-          pru: pos.pru,
-          totalPurchase,
-          totalSale,
-          averageSalePrice: totalSale / tx.quantity,
-          gainLoss,
-          gainLossPercent: (gainLoss / totalPurchase) * 100,
-          dividends: 0,
-          sector: pos.sector,
-        });
-
+        const purchaseTx = allTx.filter(t => (t.code || "").trim().toUpperCase() === txCode && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+        closedPositions.push({ id: crypto.randomUUID(), portfolioId: targetPortfolioId, code: tx.code, name: tx.name, purchaseDate: purchaseTx?.date || tx.date, saleDate: tx.date, quantity: tx.quantity, pru: pos.pru, totalPurchase, totalSale, averageSalePrice: totalSale / tx.quantity, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends: 0, sector: pos.sector });
         const newQuantity = pos.quantity - tx.quantity;
-        if (newQuantity === 0) {
-          positions.splice(idx, 1);
-        } else {
-          positions[idx] = {
-            ...pos,
-            quantity: newQuantity,
-            totalCost: pos.totalCost - totalPurchase,
-          };
-        }
-      }
-      // dividendes, dépôts, retraits : on enregistre juste la transaction
-    }
-
-    // Tout écrire en base en une seule transaction atomique
-    await db.transaction("rw", [db.transactions, db.positions, db.closedPositions], async () => {
-      await db.transactions.where('portfolioId').equals(targetPortfolioId).delete();
-      await db.positions.where('portfolioId').equals(targetPortfolioId).delete();
-      await db.closedPositions.where('portfolioId').equals(targetPortfolioId).delete();
-      await db.transactions.bulkAdd(allTx);
-      await db.positions.bulkAdd(positions);
-      await db.closedPositions.bulkAdd(closedPositions);
-    });
-  };
-
-  const handlePurchase = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
-    const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
-    const txCode = (transaction.code || "").trim().toUpperCase();
-    const existingPosition = targetData.positions.find(p => (p.code || "").trim().toUpperCase() === txCode);
-    const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-    const convertedFees = transaction.fees;
-    const convertedTff = transaction.tff;
-    const totalCost = transaction.quantity * convertedUnitPrice + convertedFees + convertedTff;
-    if (portfolioId) {
-      const targetPortfolio = await db.portfolios.get(portfolioId);
-      if (targetPortfolio) {
-        await db.portfolios.update(portfolioId, { cash: (targetPortfolio.cash || 0) - totalCost });
+        if (newQuantity === 0) positions.splice(idx, 1);
+        else positions[idx] = { ...pos, quantity: newQuantity, totalCost: pos.totalCost - totalPurchase };
       }
     }
-    if (existingPosition) {
-      const newTotalCost = existingPosition.totalCost + totalCost;
-      const newQuantity = existingPosition.quantity + transaction.quantity;
-      const newPRU = newTotalCost / newQuantity;
-      const updatedPositions = targetData.positions.map(p =>
-        p.code === transaction.code
-          ? { ...p, quantity: newQuantity, totalCost: newTotalCost, pru: newPRU, currency: transaction.currency }
-          : p
-      );
-      await updateCurrentPortfolioData({ transactions: newTransactions, positions: updatedPositions }, portfolioId);
-    } else {
-      const pru = totalCost / transaction.quantity;
-      await updateCurrentPortfolioData({
-        transactions: newTransactions,
-        positions: [
-          ...targetData.positions,
-          { code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru, currency: transaction.currency, sector: transaction.sector },
-        ],
-      }, portfolioId);
-    }
+
+    await deleteTransactionsByPortfolio(targetPortfolioId);
+    await deletePositionsByPortfolio(targetPortfolioId);
+    await deleteClosedPositionsByPortfolio(targetPortfolioId);
+    await bulkAddTransactions(allTx);
+    await bulkUpsertPositions(positions);
+    await bulkAddClosedPositions(closedPositions);
+    await refreshData();
   };
 
-  const handleSale = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
-    const targetData = portfolioData[portfolioId] || { transactions: [], positions: [], closedPositions: [] };
-    const existingPosition = targetData.positions.find(p => p.code === transaction.code);
-    if (!existingPosition) {
-      console.warn(`Vente ignorée : aucune position trouvée pour ${transaction.code}`);
-      await updateCurrentPortfolioData({ transactions: newTransactions }, portfolioId);
-      return;
-    }
-    if (existingPosition.quantity < transaction.quantity) {
-      alert("Erreur: Quantité insuffisante pour la vente");
-      return;
-    }
-    const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-    const convertedFees = transaction.fees * transaction.conversionRate;
-    const convertedTff = transaction.tff * transaction.conversionRate;
-    const totalSale = transaction.quantity * convertedUnitPrice - convertedFees - convertedTff;
-    const averageSalePrice = totalSale / transaction.quantity;
-    if (portfolioId) {
-      const targetPortfolio = await db.portfolios.get(portfolioId);
-      if (targetPortfolio) {
-        await db.portfolios.update(portfolioId, { cash: (targetPortfolio.cash || 0) + totalSale });
-      }
-    }
-    const totalPurchase = transaction.quantity * existingPosition.pru;
-    const gainLoss = totalSale - totalPurchase;
-    const gainLossPercent = (gainLoss / totalPurchase) * 100;
-    const purchaseTransaction = newTransactions
-      .filter(t => t.code === transaction.code && t.type === "achat")
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-    const purchaseDate = new Date(purchaseTransaction?.date || transaction.date);
-    const saleDate = new Date(transaction.date);
-    const dividends = newTransactions
-      .filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate)
-      .reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
-    const newQuantity = existingPosition.quantity - transaction.quantity;
-    const closedPosition: ClosedPosition = {
-      code: transaction.code,
-      name: transaction.name,
-      purchaseDate: purchaseTransaction?.date || transaction.date,
-      saleDate: transaction.date,
-      quantity: transaction.quantity,
-      pru: existingPosition.pru,
-      totalPurchase,
-      totalSale,
-      averageSalePrice,
-      gainLoss,
-      gainLossPercent,
-      dividends,
-      sector: existingPosition.sector,
-    };
-    if (newQuantity === 0) {
-      await updateCurrentPortfolioData({
-        transactions: newTransactions,
-        positions: targetData.positions.filter(p => p.code !== transaction.code),
-        closedPositions: [...targetData.closedPositions, closedPosition],
-      }, portfolioId);
-    } else {
-      await updateCurrentPortfolioData({
-        transactions: newTransactions,
-        positions: targetData.positions.map(p =>
-          p.code === transaction.code
-            ? { ...p, quantity: newQuantity, totalCost: existingPosition.totalCost - totalPurchase }
-            : p
-        ),
-        closedPositions: [...targetData.closedPositions, closedPosition],
-      }, portfolioId);
-    }
-  };
+  // ============================================================
+  // DELETE TRANSACTION (recalcul complet)
+  // ============================================================
 
-  const handleDividend = async (transaction: Transaction, newTransactions: Transaction[], portfolioId: string) => {
-    if (portfolioId) {
-      const targetPortfolio = await db.portfolios.get(portfolioId);
-      if (targetPortfolio) {
-        const dividendAmount = (transaction.unitPrice * transaction.quantity * transaction.conversionRate) - (transaction.tax || 0);
-        await db.portfolios.update(portfolioId, { cash: (targetPortfolio.cash || 0) + dividendAmount });
-      }
-    }
-    await updateCurrentPortfolioData({ transactions: newTransactions }, portfolioId);
-  };
+  const handleDeleteTransaction = async (id: string) => {
+    if (!confirm("Supprimer cette transaction ?")) return;
+    if (!currentPortfolioId || currentPortfolioId === "ALL") return;
 
-  const handleDeleteTransaction = (id: string) => {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer cette transaction ?")) return;
+    await dbDeleteTransaction(id);
     const updatedTransactions = currentData.transactions.filter(t => t.id !== id);
-    const newPositions: Position[] = [];
-    const newClosedPositions: ClosedPosition[] = [];
+    const newPositions: DBPosition[] = [];
+    const newClosedPositions: DBClosedPosition[] = [];
+
     updatedTransactions
       .filter(t => t.type === "achat" || t.type === "vente")
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .forEach(transaction => {
         if (transaction.type === "achat") {
-          const existingPosition = newPositions.find(p => p.code === transaction.code);
           const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-          const convertedFees = transaction.fees * transaction.conversionRate;
-          const convertedTff = transaction.tff * transaction.conversionRate;
-          if (existingPosition) {
-            const newTotalCost = existingPosition.totalCost + (transaction.quantity * convertedUnitPrice + convertedFees + convertedTff);
-            const newQuantity = existingPosition.quantity + transaction.quantity;
-            existingPosition.quantity = newQuantity;
-            existingPosition.totalCost = newTotalCost;
-            existingPosition.pru = newTotalCost / newQuantity;
-            existingPosition.currency = transaction.currency;
+          const totalCost = transaction.quantity * convertedUnitPrice + transaction.fees * transaction.conversionRate + transaction.tff * transaction.conversionRate;
+          const existing = newPositions.find(p => p.code === transaction.code);
+          if (existing) {
+            const newTotalCost = existing.totalCost + totalCost;
+            const newQuantity = existing.quantity + transaction.quantity;
+            existing.quantity = newQuantity; existing.totalCost = newTotalCost; existing.pru = newTotalCost / newQuantity;
           } else {
-            const totalCost = transaction.quantity * convertedUnitPrice + convertedFees + convertedTff;
-            newPositions.push({ code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
+            newPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
           }
         } else if (transaction.type === "vente") {
-          const existingPosition = newPositions.find(p => p.code === transaction.code);
-          if (existingPosition && existingPosition.quantity >= transaction.quantity) {
+          const existing = newPositions.find(p => p.code === transaction.code);
+          if (existing && existing.quantity >= transaction.quantity) {
             const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-            const convertedFees = transaction.fees * transaction.conversionRate;
-            const convertedTff = transaction.tff * transaction.conversionRate;
-            const totalSale = transaction.quantity * convertedUnitPrice - convertedFees - convertedTff;
-            const totalPurchase = transaction.quantity * existingPosition.pru;
+            const totalSale = transaction.quantity * convertedUnitPrice - transaction.fees * transaction.conversionRate - transaction.tff * transaction.conversionRate;
+            const totalPurchase = transaction.quantity * existing.pru;
             const gainLoss = totalSale - totalPurchase;
-            const purchaseTransaction = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-            const purchaseDate = new Date(purchaseTransaction?.date || transaction.date);
+            const purchaseTx = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+            const purchaseDate = new Date(purchaseTx?.date || transaction.date);
             const saleDate = new Date(transaction.date);
             const dividends = updatedTransactions.filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
-            newClosedPositions.push({ code: transaction.code, name: transaction.name, purchaseDate: purchaseTransaction?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existingPosition.pru, totalPurchase, totalSale, averageSalePrice: totalSale / transaction.quantity, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existingPosition.sector });
-            const newQuantity = existingPosition.quantity - transaction.quantity;
-            if (newQuantity === 0) {
-              newPositions.splice(newPositions.indexOf(existingPosition), 1);
-            } else {
-              existingPosition.quantity = newQuantity;
-              existingPosition.totalCost = existingPosition.totalCost - totalPurchase;
-            }
+            newClosedPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, purchaseDate: purchaseTx?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existing.pru, averageSalePrice: totalSale / transaction.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existing.sector });
+            const newQuantity = existing.quantity - transaction.quantity;
+            if (newQuantity === 0) newPositions.splice(newPositions.indexOf(existing), 1);
+            else { existing.quantity = newQuantity; existing.totalCost -= totalPurchase; }
           }
         }
       });
-    updateCurrentPortfolioData({ transactions: updatedTransactions, positions: newPositions, closedPositions: newClosedPositions });
+
+    await deletePositionsByPortfolio(currentPortfolioId);
+    await deleteClosedPositionsByPortfolio(currentPortfolioId);
+    await bulkUpsertPositions(newPositions);
+    await bulkAddClosedPositions(newClosedPositions);
+    await refreshData();
   };
+
+  // ============================================================
+  // ACTIONS POSITIONS
+  // ============================================================
 
   const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => {
     setDialogInitialData({ code: position.code, name: position.name, type: action, quantity: action === 'vente' ? position.quantity : undefined, portfolioId });
@@ -672,57 +533,44 @@ export function PortfolioLayout() {
   };
 
   const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal", date: string) => {
-    if (!currentPortfolioId || !portfolios) return;
-    const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
-    if (!currentPortfolio) return;
+    if (!currentPortfolioId || !currentPortfolio) return;
     const newCash = type === "deposit" ? (currentPortfolio.cash || 0) + amount : (currentPortfolio.cash || 0) - amount;
     if (newCash < 0) { alert("Erreur: Le solde ne peut pas être négatif"); return; }
-    const newTransaction: Transaction = { id: crypto.randomUUID(), date, code: "CASH", name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités", type: type === "deposit" ? "depot" : "retrait", quantity: 1, unitPrice: amount, fees: 0, tff: 0, currency: currentPortfolio.currency, conversionRate: 1 };
-    await db.portfolios.update(currentPortfolioId, { cash: newCash });
-    await updateCurrentPortfolioData({ transactions: [...currentData.transactions, newTransaction] });
+    const newTransaction: DBTransaction = { id: crypto.randomUUID(), portfolioId: currentPortfolioId, date, code: "CASH", name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités", type: type === "deposit" ? "depot" : "retrait", quantity: 1, unitPrice: amount, fees: 0, tff: 0, currency: currentPortfolio.currency, conversionRate: 1 };
+    await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
+    await dbAddTransaction(newTransaction);
+    await refreshData();
   };
 
   const handleUpdateStopLoss = async (code: string, stopLoss: number | undefined) => {
-    if (!currentPortfolioId || !portfolios) return;
-    if (currentPortfolioId === "ALL") {
-      for (const portfolio of portfolios) {
-        const portfolioPositions = portfolioData[portfolio.id]?.positions || [];
-        if (portfolioPositions.some(p => p.code === code)) {
-          const updatedPositions = portfolioPositions.map(p => p.code === code ? { ...p, stopLoss } : p);
-          await db.positions.where('portfolioId').equals(portfolio.id).delete();
-          await db.positions.bulkAdd(updatedPositions.map(p => ({ ...p, portfolioId: portfolio.id })));
-        }
-      }
-    } else {
-      const currentPortfolioData = portfolioData[currentPortfolioId];
-      if (!currentPortfolioData) return;
-      await updateCurrentPortfolioData({ positions: currentPortfolioData.positions.map(p => p.code === code ? { ...p, stopLoss } : p) });
+    if (!currentPortfolioId) return;
+    const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
+    for (const pid of portfolioIds) {
+      const pos = portfolioData[pid]?.positions.find(p => p.code === code);
+      if (pos) await upsertPosition({ portfolioId: pid, code: pos.code, name: pos.name, quantity: pos.quantity, totalCost: pos.totalCost, pru: pos.pru, currency: pos.currency, stopLoss, manualCurrentPrice: pos.manualCurrentPrice, sector: pos.sector });
     }
+    await refreshData();
   };
 
   const handleUpdateCurrentPrice = async (code: string, manualCurrentPrice: number | undefined) => {
-    if (!currentPortfolioId || !portfolios) return;
-    if (currentPortfolioId === "ALL") {
-      for (const portfolio of portfolios) {
-        const portfolioPositions = portfolioData[portfolio.id]?.positions || [];
-        if (portfolioPositions.some(p => p.code === code)) {
-          const updatedPositions = portfolioPositions.map(p => p.code === code ? { ...p, manualCurrentPrice } : p);
-          await db.positions.where('portfolioId').equals(portfolio.id).delete();
-          await db.positions.bulkAdd(updatedPositions.map(p => ({ ...p, portfolioId: portfolio.id })));
-        }
-      }
-    } else {
-      const currentPortfolioData = portfolioData[currentPortfolioId];
-      if (!currentPortfolioData) return;
-      await updateCurrentPortfolioData({ positions: currentPortfolioData.positions.map(p => p.code === code ? { ...p, manualCurrentPrice } : p) });
+    if (!currentPortfolioId) return;
+    const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
+    for (const pid of portfolioIds) {
+      const pos = portfolioData[pid]?.positions.find(p => p.code === code);
+      if (pos) await upsertPosition({ portfolioId: pid, code: pos.code, name: pos.name, quantity: pos.quantity, totalCost: pos.totalCost, pru: pos.pru, currency: pos.currency, stopLoss: pos.stopLoss, manualCurrentPrice, sector: pos.sector });
     }
+    await refreshData();
   };
 
+  // ============================================================
+  // CONTEXT
+  // ============================================================
+
   const contextValue: PortfolioContextType = {
-    portfolios: portfolios || [],
+    portfolios,
     currentPortfolioId,
     currentPortfolio,
-    currentData: consolidatedData,
+    currentData,
     handleCreatePortfolio,
     handleUpdatePortfolio,
     handleDeletePortfolio,
@@ -737,9 +585,10 @@ export function PortfolioLayout() {
     dialogOpen,
     setDialogOpen,
     dialogInitialData,
+    refreshData,
   };
 
-  if (isLoading || !portfolios) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4">
