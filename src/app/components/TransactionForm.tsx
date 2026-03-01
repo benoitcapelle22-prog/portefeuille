@@ -34,7 +34,7 @@ interface TransactionFormProps {
 type QuoteStatus = "idle" | "loading" | "found" | "not_found" | "error";
 
 export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios }: TransactionFormProps) {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState<"achat" | "vente" | "dividende" | "depot" | "retrait">("achat");
@@ -42,7 +42,9 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
   const [unitPrice, setUnitPrice] = useState("");
   const [fees, setFees] = useState("");
   const [tff, setTff] = useState("");
-  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK">(currentPortfolio?.currency || "EUR");
+  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK">(
+    currentPortfolio?.currency || "EUR"
+  );
   const [conversionRate, setConversionRate] = useState("");
   const [tax, setTax] = useState("");
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>(currentPortfolio?.id || "");
@@ -53,9 +55,13 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ✅ pour ne pas écraser si tu modifies le champ nom
+  const nameTouchedRef = useRef(false);
+  const [nameAuto, setNameAuto] = useState(false);
+
   const selectedPortfolio = portfolios?.find(p => p.id === selectedPortfolioId) || currentPortfolio;
 
-  // Recherche automatique : cours (Alpha Vantage) + nom + secteur (FMP) en parallèle
+  // Recherche automatique : cours (api/quotes) + nom (api/ticker) + secteur (api/stock-search si dispo)
   useEffect(() => {
     const trimmed = code.trim().toUpperCase();
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -70,14 +76,15 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const [quoteRes, stockRes] = await Promise.all([
-          fetch(`/api/quotes?symbols=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null),
-          fetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null),
+        const [quoteRes, tickerRes, stockRes] = await Promise.all([
+          fetch(`/api/quotes?symbols=${encodeURIComponent(trimmed)}`).then(r => (r.ok ? r.json() : null)),
+          fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => (r.ok ? r.json() : null)),
+          fetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`).then(r => (r.ok ? r.json() : null)),
         ]);
 
         // Cours
         const quotes: any[] = quoteRes?.quotes ?? [];
-        const quote = quotes.find((q: any) => q.symbol === trimmed);
+        const quote = quotes.find((q: any) => String(q.symbol || "").toUpperCase() === trimmed);
         const price = quote?.price ?? null;
 
         if (price != null) {
@@ -89,19 +96,27 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
           setQuoteStatus("not_found");
         }
 
-        // Nom (si champ vide)
-        if (!name && stockRes?.name) setName(stockRes.name);
+        // ✅ Nom via /api/ticker
+        const fetchedName = typeof tickerRes?.name === "string" ? tickerRes.name : null;
+        if (fetchedName && !nameTouchedRef.current) {
+          if (!name || nameAuto) {
+            setName(fetchedName);
+            setNameAuto(true);
+          }
+        }
 
-        // Secteur (si champ vide)
+        // Secteur (si dispo)
         if (!sector && stockRes?.sector) setSector(stockRes.sector);
-
       } catch {
         setLivePrice(null);
         setQuoteStatus("error");
       }
-    }, 1000);
+    }, 900);
 
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
   useEffect(() => {
@@ -115,12 +130,14 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     if (autoTFF && quantity && unitPrice && currency === "EUR" && type === "achat") {
       setTff(calculateTFF().toFixed(2));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoTFF, quantity, unitPrice, currency, type]);
 
   useEffect(() => {
     if (quantity && unitPrice && (type === "achat" || type === "vente") && selectedPortfolio?.fees.defaultFeesPercent) {
       setFees(calculateFees().toFixed(2));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quantity, unitPrice, currency, conversionRate, type, selectedPortfolio]);
 
   const currencySymbol = selectedPortfolio?.currency === "USD" ? "$" : "€";
@@ -128,8 +145,10 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
 
   const getCurrencySymbol = (curr: string) => {
     switch (curr) {
-      case "USD": return "$"; case "EUR": return "€";
-      case "GBP": return "£"; case "JPY": return "¥";
+      case "USD": return "$";
+      case "EUR": return "€";
+      case "GBP": return "£";
+      case "JPY": return "¥";
       default: return curr;
     }
   };
@@ -166,23 +185,45 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
       alert("Veuillez remplir tous les champs obligatoires");
       return;
     }
-    const calculatedTFF = (type === "achat" && autoTFF) ? (parseFloat(tff) || calculateTFF()) : 0;
+    const calculatedTFF = type === "achat" && autoTFF ? (parseFloat(tff) || calculateTFF()) : 0;
     const calculatedFees = fees ? parseFloat(fees) : calculateFees();
 
-    onAddTransaction({
-      date, code: code.toUpperCase(), name, type,
-      quantity: parseFloat(quantity), unitPrice: parseFloat(unitPrice),
-      fees: calculatedFees, tff: calculatedTFF, currency,
-      conversionRate: parseFloat(conversionRate) || 1,
-      tax: type === "dividende" ? parseFloat(tax) : undefined,
-      portfolioCode: selectedPortfolio?.code,
-      sector: sector || undefined,
-    }, selectedPortfolio?.id);
+    onAddTransaction(
+      {
+        date,
+        code: code.toUpperCase(),
+        name,
+        type,
+        quantity: parseFloat(quantity),
+        unitPrice: parseFloat(unitPrice),
+        fees: calculatedFees,
+        tff: calculatedTFF,
+        currency,
+        conversionRate: parseFloat(conversionRate) || 1,
+        tax: type === "dividende" ? parseFloat(tax) : undefined,
+        portfolioCode: selectedPortfolio?.code,
+        sector: sector || undefined,
+      },
+      selectedPortfolio?.id
+    );
 
-    setCode(""); setName(""); setQuantity(""); setUnitPrice("");
-    setFees(""); setTff(""); setCurrency(selectedPortfolio?.currency as any || "EUR");
-    setConversionRate(""); setTax(""); setSector(""); setAutoTFF(false);
-    setQuoteStatus("idle"); setLivePrice(null);
+    setCode("");
+    setName("");
+    setQuantity("");
+    setUnitPrice("");
+    setFees("");
+    setTff("");
+    setCurrency((selectedPortfolio?.currency as any) || "EUR");
+    setConversionRate("");
+    setTax("");
+    setSector("");
+    setAutoTFF(false);
+    setQuoteStatus("idle");
+    setLivePrice(null);
+
+    // reset auto flags
+    nameTouchedRef.current = false;
+    setNameAuto(false);
   };
 
   const AutoBadge = () => <span className="text-xs font-normal text-green-600 ml-1">(auto)</span>;
@@ -192,7 +233,7 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     if (quoteStatus === "loading") return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
         <Loader2 className="h-3 w-3 animate-spin" />
-        <span>Recherche cours, nom et secteur...</span>
+        <span>Recherche cours + infos...</span>
       </div>
     );
     if (quoteStatus === "found" && livePrice !== null) return (
@@ -226,7 +267,6 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-
             {portfolios && portfolios.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="portfolio">Portefeuille</Label>
@@ -234,7 +274,9 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
                   <SelectTrigger id="portfolio"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {portfolios.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.currency})</SelectItem>
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} ({p.currency})
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -251,8 +293,12 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
                 Code <TrendingUp className="h-3 w-3 text-muted-foreground" />
               </Label>
               <Input
-                id="code" type="text" placeholder="Ex: MC.PA ou AAPL"
-                value={code} onChange={(e) => setCode(e.target.value)} required
+                id="code"
+                type="text"
+                placeholder="Ex: MC.PA ou AAPL"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
                 className={
                   quoteStatus === "found" ? "border-green-400 focus-visible:ring-green-300" :
                   quoteStatus === "not_found" ? "border-amber-400 focus-visible:ring-amber-300" :
@@ -265,16 +311,26 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
             <div className="space-y-2">
               <Label htmlFor="name" className="flex items-center">
                 Nom de l'action
-                {name && (quoteStatus === "found" || quoteStatus === "not_found") && <AutoBadge />}
+                {nameAuto && name ? <AutoBadge /> : null}
               </Label>
-              <Input id="name" type="text" placeholder="Ex: Apple Inc." value={name} onChange={(e) => setName(e.target.value)} required />
+              <Input
+                id="name"
+                type="text"
+                placeholder="Ex: Apple Inc."
+                value={name}
+                onChange={(e) => {
+                  nameTouchedRef.current = true;
+                  setNameAuto(false);
+                  setName(e.target.value);
+                }}
+                required
+              />
             </div>
 
             {type === "achat" && (
               <div className="space-y-2">
                 <Label htmlFor="sector" className="flex items-center">
                   Secteur d'activité
-                  {sector && (quoteStatus === "found" || quoteStatus === "not_found") && <AutoBadge />}
                 </Label>
                 <Input id="sector" type="text" placeholder="Ex: Technology" value={sector} onChange={(e) => setSector(e.target.value)} />
               </div>
@@ -376,12 +432,14 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
               <Label>Montant total de l'opération ({transactionCurrencySymbol})</Label>
               <Input type="text" value={totalAmount().toFixed(2)} disabled className="bg-muted font-semibold" />
             </div>
+
             {currency !== selectedPortfolio?.currency && conversionRate && (
               <div className="space-y-2">
                 <Label>Montant total converti ({currencySymbol})</Label>
                 <Input type="text" value={(totalAmount() * (parseFloat(conversionRate) || 1)).toFixed(2)} disabled className="bg-muted font-semibold" />
               </div>
             )}
+
             {type === "achat" && (
               <div className="space-y-2 md:col-span-2">
                 <Label>PRU en {currencySymbol}</Label>
