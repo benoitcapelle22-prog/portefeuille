@@ -14,6 +14,7 @@ export function TransactionsPage() {
     handleAddTransaction,
     handleImportTransactions,
     handleDeleteTransaction,
+    handleEditTransaction,
     handlePositionAction,
     handleUpdateCash,
     handleUpdateStopLoss,
@@ -22,10 +23,9 @@ export function TransactionsPage() {
     currentPortfolioId,
   } = usePortfolio();
 
-  // En vue consolidée, utiliser EUR comme devise par défaut et vérifier si au moins un portefeuille est de type Trading
   const isConsolidatedView = currentPortfolioId === "ALL";
   const displayCurrency = isConsolidatedView ? "EUR" : currentPortfolio?.currency;
-  const hasAnyTradingPortfolio = isConsolidatedView 
+  const hasAnyTradingPortfolio = isConsolidatedView
     ? portfolios.some(p => p.category === "Trading")
     : currentPortfolio?.category === "Trading";
   const totalCashConsolidated = isConsolidatedView
@@ -46,7 +46,7 @@ export function TransactionsPage() {
         <div className="flex justify-end mb-4">
           <ImportTransactions onImportTransactions={handleImportTransactions} />
         </div>
-        <TransactionForm 
+        <TransactionForm
           onAddTransaction={handleAddTransaction}
           currentPortfolio={currentPortfolio}
           portfolios={portfolios}
@@ -54,8 +54,8 @@ export function TransactionsPage() {
       </TabsContent>
 
       <TabsContent value="positions">
-        <CurrentPositions 
-          positions={currentData.positions} 
+        <CurrentPositions
+          positions={currentData.positions}
           portfolioCurrency={displayCurrency}
           onAction={handlePositionAction}
           transactions={currentData.transactions}
@@ -69,7 +69,7 @@ export function TransactionsPage() {
       </TabsContent>
 
       <TabsContent value="cloturees">
-        <ClosedPositions 
+        <ClosedPositions
           closedPositions={currentData.closedPositions}
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}
@@ -77,16 +77,17 @@ export function TransactionsPage() {
       </TabsContent>
 
       <TabsContent value="dividendes">
-        <DividendsHistory 
+        <DividendsHistory
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}
         />
       </TabsContent>
 
       <TabsContent value="historique">
-        <TransactionHistory 
+        <TransactionHistory
           transactions={currentData.transactions}
           onDeleteTransaction={handleDeleteTransaction}
+          onEditTransaction={handleEditTransaction}
           portfolioCurrency={displayCurrency}
         />
       </TabsContent>
