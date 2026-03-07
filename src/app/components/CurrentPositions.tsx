@@ -410,14 +410,14 @@ export function CurrentPositions({
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-0.5">
                           <PriceInput
-                            value={position.manualCurrentPrice}
-                            onChange={(value) => onUpdateCurrentPrice?.(position.code, value)}
-                          />
-                          {hasLivePrice && (
-                            <span className="text-[10px] text-muted-foreground tabular-nums">
-                              live: {quotesBySymbol[sym]?.price?.toFixed(2)}
-                            </span>
-                          )}
+  value={position.manualCurrentPrice ?? position.currentPrice ?? undefined}
+  onChange={(value) => onUpdateCurrentPrice?.(position.code, value)}
+/>
+{hasLivePrice && (
+  <span className="text-[10px] text-muted-foreground tabular-nums">
+    live
+  </span>
+)}
                         </div>
                       </TableCell>
 

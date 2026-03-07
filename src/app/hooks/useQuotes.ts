@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getQuotes, type Quote } from "../../services/quotes";
+import { savePricesToHistory } from "../../services/pricesHistory";
 
 type UseQuotesResult = {
   quotesBySymbol: Record<string, Quote>;
@@ -10,7 +11,7 @@ type UseQuotesResult = {
 };
 
 function uniqSymbols(symbols: string[]) {
-  return Array.from(new Set(symbols.map(s => s.trim().toUpperCase()).filter(Boolean)));
+  return Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
 }
 
 export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResult {
@@ -25,7 +26,6 @@ export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResul
   const refresh = async () => {
     if (normalized.length === 0) return;
 
-    // évite requêtes concurrentes
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -34,8 +34,6 @@ export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResul
     setError(null);
 
     try {
-      // getQuotes utilise fetch; ici on ne passe pas signal (optionnel).
-      // Si tu veux le signal, je te le modifie.
       const quotes = await getQuotes(normalized);
 
       const map: Record<string, Quote> = {};
@@ -43,10 +41,14 @@ export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResul
         map[q.symbol.toUpperCase()] = q;
       }
 
-      setQuotesBySymbol(prev => ({ ...prev, ...map }));
+      setQuotesBySymbol((prev) => ({ ...prev, ...map }));
       setUpdatedAt(Date.now());
+
+      // Sauvegarde en arrière-plan dans daily-prices
+      savePricesToHistory(quotes).catch((e) =>
+        console.warn("pricesHistory save failed:", e)
+      );
     } catch (e: any) {
-      // Si ça échoue (quota, réseau…), on garde les derniers cours affichés
       setError(String(e?.message ?? e));
     } finally {
       setLoading(false);
@@ -54,10 +56,8 @@ export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResul
   };
 
   useEffect(() => {
-    // 1er chargement
     refresh();
 
-    // auto-refresh
     const id = window.setInterval(() => {
       refresh();
     }, refreshMs);
