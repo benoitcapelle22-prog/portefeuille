@@ -43,7 +43,7 @@ async function fetchYahooPrice(symbol: string): Promise<{ price: number; currenc
 }
 
 async function savePrices(rows: { symbol: string; close: number; date: string; provider: string }[]) {
-  await supabaseFetch("/daily-prices", {
+  await supabaseFetch("/daily_prices", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(rows),

@@ -2,7 +2,7 @@ import { supabase } from "../app/supabase";
 import type { Quote } from "./quotes";
 
 /**
- * Sauvegarde les cours dans la table daily-prices.
+ * Sauvegarde les cours dans la table daily_prices.
  * Une seule entrée par symbole par jour (upsert sur symbol + date).
  */
 export async function savePricesToHistory(quotes: Quote[]): Promise<void> {
@@ -20,7 +20,7 @@ export async function savePricesToHistory(quotes: Quote[]): Promise<void> {
   if (rows.length === 0) return;
 
   const { error } = await supabase
-    .from("daily-prices")
+    .from("daily_prices")
     .upsert(rows, { onConflict: "symbol,date", ignoreDuplicates: false });
 
   if (error) {
@@ -36,7 +36,7 @@ export async function getPriceHistory(
   limit = 365
 ): Promise<{ date: string; close: number }[]> {
   const { data, error } = await supabase
-    .from("daily-prices")
+    .from("daily_prices")
     .select("date, close")
     .eq("symbol", symbol.toUpperCase())
     .order("date", { ascending: true })

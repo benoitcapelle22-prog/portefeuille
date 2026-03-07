@@ -44,7 +44,7 @@ export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResul
       setQuotesBySymbol((prev) => ({ ...prev, ...map }));
       setUpdatedAt(Date.now());
 
-      // Sauvegarde en arrière-plan dans daily-prices
+      // Sauvegarde en arrière-plan dans daily_prices
       savePricesToHistory(quotes).catch((e) =>
         console.warn("pricesHistory save failed:", e)
       );
