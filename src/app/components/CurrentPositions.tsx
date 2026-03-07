@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
@@ -79,6 +79,42 @@ interface CurrentPositionsProps {
   portfolioId?: string;
 }
 
+function PriceInput({
+  value,
+  onChange,
+}: {
+  value: number | undefined;
+  onChange: (v: number | undefined) => void;
+}) {
+  const [raw, setRaw] = useState(value !== undefined ? String(value) : "");
+
+  useEffect(() => {
+    const parsed = raw === "" || raw === "." ? undefined : parseFloat(raw);
+    if (parsed !== value) {
+      setRaw(value !== undefined ? String(value) : "");
+    }
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      value={raw}
+      onKeyDown={(e) => {
+        if (e.key === ",") e.preventDefault();
+      }}
+      onChange={(e) => {
+        const val = e.target.value.replace(",", ".");
+        if (/^[\d]*\.?[\d]*$/.test(val)) {
+          setRaw(val);
+          const parsed = val === "" || val === "." ? undefined : parseFloat(val);
+          onChange(parsed);
+        }
+      }}
+      className="w-full border rounded px-2 py-1 text-sm text-right bg-background"
+    />
+  );
+}
+
 export function CurrentPositions({
   positions,
   portfolioCurrency = "EUR",
@@ -98,12 +134,12 @@ export function CurrentPositions({
   const [type, setType] = useState<"deposit" | "withdrawal">("deposit");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [showSector, setShowSector] = useState(false);
+  const [showCurrency, setShowCurrency] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const { rates, getConversionRate } = useExchangeRates();
 
-  // Cours live (Alpha Vantage via /api/quotes) — refresh 2 min
   const symbols = useMemo(
     () => Array.from(new Set(positions.map((p) => (p.code || "").trim().toUpperCase()).filter(Boolean))),
     [positions]
@@ -111,7 +147,6 @@ export function CurrentPositions({
 
   const { quotesBySymbol, loading, error, refresh, updatedAt } = useQuotes(symbols, 120_000);
 
-  // Label "il y a X min"
   const updatedAtLabel = useMemo(() => {
     if (!updatedAt) return null;
     const diffMin = Math.floor((Date.now() - updatedAt) / 60_000);
@@ -122,7 +157,6 @@ export function CurrentPositions({
     return `à ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
   }, [updatedAt]);
 
-  // Positions enrichies : manuel > live > ancien prix
   const positionsWithPrices: Position[] = useMemo(() => {
     return positions.map((p) => {
       const sym = (p.code || "").trim().toUpperCase();
@@ -145,23 +179,21 @@ export function CurrentPositions({
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
+    else { setSortKey(key); setSortDir("asc"); }
   };
 
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortKey !== col) return <ChevronsUpDown className="inline h-3 w-3 ml-1 text-muted-foreground" />;
-    return sortDir === "asc" ? (
-      <ChevronUp className="inline h-3 w-3 ml-1" />
-    ) : (
-      <ChevronDown className="inline h-3 w-3 ml-1" />
-    );
+    return sortDir === "asc"
+      ? <ChevronUp className="inline h-3 w-3 ml-1" />
+      : <ChevronDown className="inline h-3 w-3 ml-1" />;
   };
 
   const Th = ({ col, children, className = "" }: { col: SortKey; children: React.ReactNode; className?: string }) => (
-    <TableHead className={`cursor-pointer select-none hover:bg-muted/50 ${className}`} onClick={() => handleSort(col)}>
+    <TableHead
+      className={`cursor-pointer select-none hover:bg-muted/50 whitespace-normal text-xs leading-tight ${className}`}
+      onClick={() => handleSort(col)}
+    >
       {children}
       <SortIcon col={col} />
     </TableHead>
@@ -198,67 +230,26 @@ export function CurrentPositions({
   const sortedPositions = [...filteredPositions].sort((a, b) => {
     let aVal: any, bVal: any;
     switch (sortKey) {
-      case "code":
-        aVal = a.code;
-        bVal = b.code;
-        break;
-      case "name":
-        aVal = a.name;
-        bVal = b.name;
-        break;
-      case "sector":
-        aVal = a.sector || "";
-        bVal = b.sector || "";
-        break;
-      case "currency":
-        aVal = a.currency || "";
-        bVal = b.currency || "";
-        break;
-      case "quantity":
-        aVal = a.quantity;
-        bVal = b.quantity;
-        break;
-      case "pru":
-        aVal = a.pru;
-        bVal = b.pru;
-        break;
-      case "currentPrice":
-        aVal = a.currentPrice ?? -Infinity;
-        bVal = b.currentPrice ?? -Infinity;
-        break;
-      case "totalCost":
-        aVal = a.totalCost;
-        bVal = b.totalCost;
-        break;
-      case "totalValue":
-        aVal = a.totalValue ?? -Infinity;
-        bVal = b.totalValue ?? -Infinity;
-        break;
-      case "latentGainLoss":
-        aVal = a.latentGainLoss ?? -Infinity;
-        bVal = b.latentGainLoss ?? -Infinity;
-        break;
-      case "stopLoss":
-        aVal = a.stopLoss ?? -Infinity;
-        bVal = b.stopLoss ?? -Infinity;
-        break;
-      case "risk":
-        aVal = getRisk(a) ?? -Infinity;
-        bVal = getRisk(b) ?? -Infinity;
-        break;
-      default:
-        aVal = "";
-        bVal = "";
+      case "code": aVal = a.code; bVal = b.code; break;
+      case "name": aVal = a.name; bVal = b.name; break;
+      case "sector": aVal = a.sector || ""; bVal = b.sector || ""; break;
+      case "currency": aVal = a.currency || ""; bVal = b.currency || ""; break;
+      case "quantity": aVal = a.quantity; bVal = b.quantity; break;
+      case "pru": aVal = a.pru; bVal = b.pru; break;
+      case "currentPrice": aVal = a.currentPrice ?? -Infinity; bVal = b.currentPrice ?? -Infinity; break;
+      case "totalCost": aVal = a.totalCost; bVal = b.totalCost; break;
+      case "totalValue": aVal = a.totalValue ?? -Infinity; bVal = b.totalValue ?? -Infinity; break;
+      case "latentGainLoss": aVal = a.latentGainLoss ?? -Infinity; bVal = b.latentGainLoss ?? -Infinity; break;
+      case "stopLoss": aVal = a.stopLoss ?? -Infinity; bVal = b.stopLoss ?? -Infinity; break;
+      case "risk": aVal = getRisk(a) ?? -Infinity; bVal = getRisk(b) ?? -Infinity; break;
+      default: aVal = ""; bVal = "";
     }
     if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, "fr") : bVal.localeCompare(aVal, "fr");
     return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
   const hasActiveFilters = searchFilter !== "" || endDate !== "";
-  const resetFilters = () => {
-    setSearchFilter("");
-    setEndDate("");
-  };
+  const resetFilters = () => { setSearchFilter(""); setEndDate(""); };
 
   const totalInvested = filteredPositions.reduce((sum, pos) => sum + pos.totalCost, 0);
   const totalValue = filteredPositions.reduce((sum, pos) => sum + (pos.totalValue || 0), 0);
@@ -271,21 +262,13 @@ export function CurrentPositions({
     portfolioCategory === "Trading"
       ? filteredPositions.reduce((sum, pos) => (pos.stopLoss !== undefined ? sum + (pos.stopLoss - pos.pru) * pos.quantity : sum), 0)
       : 0;
-
-  // % risque total affiché sous la colonne "Risque"
   const totalRiskPercent = totalPortfolio > 0 ? (totalRisk / totalPortfolio) * 100 : 0;
 
   const handleSubmit = () => {
     if (!onUpdateCash) return;
     const amountValue = parseFloat(amount);
-    if (Number.isNaN(amountValue) || amountValue <= 0) {
-      alert("Veuillez saisir un montant valide");
-      return;
-    }
-    if (type === "withdrawal" && amountValue > cash) {
-      alert("Montant insuffisant dans les liquidités");
-      return;
-    }
+    if (Number.isNaN(amountValue) || amountValue <= 0) { alert("Veuillez saisir un montant valide"); return; }
+    if (type === "withdrawal" && amountValue > cash) { alert("Montant insuffisant dans les liquidités"); return; }
     onUpdateCash(amountValue, type, date);
     setAmount("");
     setIsDialogOpen(false);
@@ -293,17 +276,27 @@ export function CurrentPositions({
 
   const hasPortfolioCodeColumn = positionsWithPrices.some((p) => p.portfolioCode);
 
-  // Colspan dynamiques (évite les cassures quand on ajoute/enlève des colonnes)
-  const prefixColSpan = 6 + (showSector ? 1 : 0) + (hasPortfolioCodeColumn ? 1 : 0);
+  // Colspan : colonnes fixes = code, nom, qté, PRU, cours actuel, montant entrée, valeur actuelle, latent, actions = 9
+  // + portefeuille, secteur, devise si affichés
+  const prefixColSpan =
+    6
+    + (hasPortfolioCodeColumn ? 1 : 0)
+    + (showSector ? 1 : 0)
+    + (showCurrency ? 1 : 0);
+
   const totalColumnCount =
-    10 + (showSector ? 1 : 0) + (hasPortfolioCodeColumn ? 1 : 0) + (portfolioCategory === "Trading" ? 2 : 0);
+    9
+    + (hasPortfolioCodeColumn ? 1 : 0)
+    + (showSector ? 1 : 0)
+    + (showCurrency ? 1 : 0)
+    + (portfolioCategory === "Trading" ? 2 : 0);
 
   return (
     <Card>
       <CardHeader></CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Filtres + indicateur cours live */}
+          {/* Filtres */}
           <div className="flex gap-3 items-center flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -316,24 +309,27 @@ export function CurrentPositions({
               />
             </div>
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+
             <Button variant="outline" size="sm" onClick={() => setShowSector(!showSector)}>
-              {showSector ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+              {showSector ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
               Secteur
             </Button>
+
+            <Button variant="outline" size="sm" onClick={() => setShowCurrency(!showCurrency)}>
+              {showCurrency ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
+              Devise
+            </Button>
+
             {hasActiveFilters && (
               <Button variant="outline" size="sm" onClick={resetFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Réinitialiser
+                <X className="h-4 w-4 mr-1" />Réinitialiser
               </Button>
             )}
 
-            {/* Indicateur cours live */}
             {symbols.length > 0 && (
               <div className="flex items-center gap-2 ml-auto">
                 {error ? (
-                  <span className="text-xs text-red-500" title={error}>
-                    ⚠ Cours indisponibles
-                  </span>
+                  <span className="text-xs text-red-500" title={error}>⚠ Cours indisponibles</span>
                 ) : updatedAtLabel ? (
                   <span className="text-xs text-muted-foreground">Cours mis à jour {updatedAtLabel}</span>
                 ) : null}
@@ -360,39 +356,21 @@ export function CurrentPositions({
                   <Th col="code">Code</Th>
                   <Th col="name">Nom</Th>
                   {showSector && <Th col="sector">Secteur</Th>}
-                  <Th col="currency" className="text-center">
-                    Devise
+                  {showCurrency && <Th col="currency" className="text-center">Devise</Th>}
+                  <Th col="quantity" className="text-right">Quantité</Th>
+                  <Th col="pru" className="text-right">PRU ({portfolioCurrency})</Th>
+                  <Th col="currentPrice" className="text-right w-32">Cours actuel</Th>
+                  <Th col="totalCost" className="text-right w-20">
+                    <span className="leading-tight">Montant<br />d'entrée</span>
                   </Th>
-                  <Th col="quantity" className="text-right">
-                    Quantité
+                  <Th col="totalValue" className="text-right">Valeur actuelle</Th>
+                  <Th col="latentGainLoss" className="text-right w-20">
+                    <span className="leading-tight">+/- Value<br />latente</span>
                   </Th>
-                  <Th col="pru" className="text-right">
-                    PRU ({portfolioCurrency})
-                  </Th>
-                  <Th col="currentPrice" className="text-right">
-                    Cours actuel
-                  </Th>
-                  <Th col="totalCost" className="text-right">
-                    Montant d'entrée
-                  </Th>
-                  <Th col="totalValue" className="text-right">
-                    Valeur actuelle
-                  </Th>
-
-                  {/* Fusion : valeur + % en dessous */}
-                  <Th col="latentGainLoss" className="text-right">
-                    +/- Value latente
-                  </Th>
-
                   {portfolioCategory === "Trading" && (
                     <>
-                      <Th col="stopLoss" className="text-right">
-                        Stop Loss
-                      </Th>
-                      {/* Fusion : risque € + risque % en dessous */}
-                      <Th col="risk" className="text-right">
-                        Risque
-                      </Th>
+                      <Th col="stopLoss" className="text-right w-32">Stop Loss</Th>
+                      <Th col="risk" className="text-right">Risque</Th>
                     </>
                   )}
                   <TableHead className="text-center">Actions</TableHead>
@@ -414,36 +392,26 @@ export function CurrentPositions({
                   const riskPercent = getRiskPercent(position);
                   const sym = (position.code || "").trim().toUpperCase();
                   const hasLivePrice = quotesBySymbol[sym]?.price != null && position.manualCurrentPrice === undefined;
-
                   const latentVal = position.latentGainLoss ?? 0;
                   const latentPct = position.latentGainLossPercent;
 
-                  const riskVal = risk;
-                  const riskPct = riskPercent;
-
                   return (
                     <TableRow key={`${position.portfolioCode || ""}-${position.code}`}>
-                      {hasPortfolioCodeColumn && <TableCell className="font-medium">{position.portfolioCode || "-"}</TableCell>}
+                      {hasPortfolioCodeColumn && (
+                        <TableCell className="font-medium">{position.portfolioCode || "-"}</TableCell>
+                      )}
                       <TableCell className="font-medium">{position.code}</TableCell>
                       <TableCell>{position.name}</TableCell>
                       {showSector && <TableCell>{position.sector}</TableCell>}
-                      <TableCell className="text-center">{positionCurrency}</TableCell>
+                      {showCurrency && <TableCell className="text-center">{positionCurrency}</TableCell>}
                       <TableCell className="text-right">{position.quantity}</TableCell>
                       <TableCell className="text-right">{formatCurrency(position.pru, portfolioCurrency)}</TableCell>
 
-                      {/* Cours actuel : input manuel + indication du prix live en dessous */}
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-0.5">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder={hasLivePrice ? String(quotesBySymbol[sym]?.price?.toFixed(2)) : "Prix"}
-                            value={position.manualCurrentPrice ?? ""}
-                            onChange={(e) => {
-                              const value = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                              onUpdateCurrentPrice?.(position.code, value);
-                            }}
-                            className="w-24 h-8 text-right"
+                          <PriceInput
+                            value={position.manualCurrentPrice}
+                            onChange={(value) => onUpdateCurrentPrice?.(position.code, value)}
                           />
                           {hasLivePrice && (
                             <span className="text-[10px] text-muted-foreground tabular-nums">
@@ -456,7 +424,6 @@ export function CurrentPositions({
                       <TableCell className="text-right">{formatCurrency(position.totalCost, portfolioCurrency)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(position.totalValue, portfolioCurrency)}</TableCell>
 
-                      {/* LATENT : valeur + % sous la valeur */}
                       <TableCell className="text-right whitespace-nowrap">
                         <div className={latentVal >= 0 ? "text-green-600" : "text-red-600"}>
                           {formatCurrency(position.latentGainLoss, portfolioCurrency)}
@@ -467,30 +434,17 @@ export function CurrentPositions({
                       {portfolioCategory === "Trading" && (
                         <>
                           <TableCell className="text-right">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="SL"
-                              value={position.stopLoss ?? ""}
-                              onChange={(e) => {
-                                const value = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                                onUpdateStopLoss?.(position.code, value);
-                              }}
-                              className="w-20 h-8 text-right"
+                            <PriceInput
+                              value={position.stopLoss}
+                              onChange={(value) => onUpdateStopLoss?.(position.code, value)}
                             />
                           </TableCell>
-
-                          {/* RISQUE : valeur + % sous la valeur */}
                           <TableCell className="text-right whitespace-nowrap">
-                            <div
-                              className={
-                                (riskVal ?? 0) >= 0 ? "text-green-600" : "text-red-600"
-                              }
-                            >
-                              {riskVal !== undefined ? formatCurrency(riskVal, portfolioCurrency) : "-"}
+                            <div className={(risk ?? 0) >= 0 ? "text-green-600" : "text-red-600"}>
+                              {risk !== undefined ? formatCurrency(risk, portfolioCurrency) : "-"}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {riskPct !== undefined ? formatPercent(riskPct) : "-"}
+                              {riskPercent !== undefined ? formatPercent(riskPercent) : "-"}
                             </div>
                           </TableCell>
                         </>
@@ -528,20 +482,15 @@ export function CurrentPositions({
                   <TableCell colSpan={prefixColSpan}>TOTAL</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalValue, portfolioCurrency)}</TableCell>
-
-                  {/* TOTAL LATENT : valeur + % sous */}
                   <TableCell className="text-right whitespace-nowrap">
                     <div className={totalLatentGainLoss >= 0 ? "text-green-600" : "text-red-600"}>
                       {formatCurrency(totalLatentGainLoss, portfolioCurrency)}
                     </div>
                     <div className="text-xs text-muted-foreground">{formatPercent(totalLatentGainLossPercent)}</div>
                   </TableCell>
-
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell></TableCell>
-
-                      {/* TOTAL RISQUE : valeur + % sous */}
                       <TableCell className="text-right whitespace-nowrap">
                         <div className={totalRisk >= 0 ? "text-green-600" : "text-red-600"}>
                           {formatCurrency(totalRisk, portfolioCurrency)}
@@ -550,7 +499,6 @@ export function CurrentPositions({
                       </TableCell>
                     </>
                   )}
-
                   <TableCell></TableCell>
                 </TableRow>
 
@@ -580,20 +528,16 @@ export function CurrentPositions({
                               <div className="space-y-2">
                                 <Label htmlFor="cash-type">Type d'opération</Label>
                                 <Select value={type} onValueChange={(v: "deposit" | "withdrawal") => setType(v)}>
-                                  <SelectTrigger id="cash-type">
-                                    <SelectValue />
-                                  </SelectTrigger>
+                                  <SelectTrigger id="cash-type"><SelectValue /></SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="deposit">
                                       <div className="flex items-center gap-2">
-                                        <Plus className="h-4 w-4 text-green-600" />
-                                        Dépôt
+                                        <Plus className="h-4 w-4 text-green-600" />Dépôt
                                       </div>
                                     </SelectItem>
                                     <SelectItem value="withdrawal">
                                       <div className="flex items-center gap-2">
-                                        <Minus className="h-4 w-4 text-red-600" />
-                                        Retrait
+                                        <Minus className="h-4 w-4 text-red-600" />Retrait
                                       </div>
                                     </SelectItem>
                                   </SelectContent>
@@ -623,9 +567,7 @@ export function CurrentPositions({
                               </div>
                             </div>
                             <DialogFooter>
-                              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                                Annuler
-                              </Button>
+                              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Annuler</Button>
                               <Button onClick={handleSubmit}>{type === "deposit" ? "Déposer" : "Retirer"}</Button>
                             </DialogFooter>
                           </DialogContent>
@@ -633,37 +575,30 @@ export function CurrentPositions({
                       )}
                     </div>
                   </TableCell>
-
                   <TableCell className="text-right font-medium">-</TableCell>
                   <TableCell className="text-right font-medium text-blue-600">{formatCurrency(cash, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right">-</TableCell>
-
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell className="text-right">-</TableCell>
                       <TableCell className="text-right">-</TableCell>
                     </>
                   )}
-
                   <TableCell></TableCell>
                 </TableRow>
 
                 {/* TOTAL PORTEFEUILLE */}
                 <TableRow className="border-t-2 font-bold bg-green-50 dark:bg-green-950/20">
-                  <TableCell colSpan={prefixColSpan} className="text-lg">
-                    TOTAL PORTEFEUILLE
-                  </TableCell>
+                  <TableCell colSpan={prefixColSpan} className="text-lg">TOTAL PORTEFEUILLE</TableCell>
                   <TableCell className="text-right"></TableCell>
                   <TableCell className="text-right text-lg text-green-600">{formatCurrency(totalPortfolio, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right"></TableCell>
-
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell className="text-right"></TableCell>
                       <TableCell className="text-right"></TableCell>
                     </>
                   )}
-
                   <TableCell></TableCell>
                 </TableRow>
 
@@ -674,16 +609,16 @@ export function CurrentPositions({
                       TOTAL PORTEFEUILLE EN EUR (taux: {rates["USD"]?.toFixed(4)})
                     </TableCell>
                     <TableCell className="text-right"></TableCell>
-                    <TableCell className="text-right text-sm text-amber-700 dark:text-amber-400">{formatCurrency(totalPortfolioInEUR, "EUR")}</TableCell>
+                    <TableCell className="text-right text-sm text-amber-700 dark:text-amber-400">
+                      {formatCurrency(totalPortfolioInEUR, "EUR")}
+                    </TableCell>
                     <TableCell className="text-right"></TableCell>
-
                     {portfolioCategory === "Trading" && (
                       <>
                         <TableCell className="text-right"></TableCell>
                         <TableCell className="text-right"></TableCell>
                       </>
                     )}
-
                     <TableCell></TableCell>
                   </TableRow>
                 )}
@@ -691,11 +626,11 @@ export function CurrentPositions({
                 {/* RISQUE TOTAL (Trading) */}
                 {portfolioCategory === "Trading" && (
                   <TableRow className="font-bold bg-red-50 dark:bg-red-950/20">
-                    <TableCell colSpan={prefixColSpan} className="text-sm italic">
-                      RISQUE TOTAL (Trading)
-                    </TableCell>
+                    <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
                     <TableCell className="text-right"></TableCell>
-                    <TableCell className="text-right text-sm text-red-700 dark:text-red-400">{formatCurrency(totalRisk, portfolioCurrency)}</TableCell>
+                    <TableCell className="text-right text-sm text-red-700 dark:text-red-400">
+                      {formatCurrency(totalRisk, portfolioCurrency)}
+                    </TableCell>
                     <TableCell className="text-right"></TableCell>
                     <TableCell className="text-right"></TableCell>
                     <TableCell></TableCell>
