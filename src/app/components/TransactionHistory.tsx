@@ -203,7 +203,14 @@ export function TransactionHistory({
                       <TableCell>{transaction.name}</TableCell>
                       <TableCell>{getTypeBadge(transaction.type)}</TableCell>
                       <TableCell className="text-right">{transaction.quantity}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(transaction.unitPrice)}</TableCell>
+                      <TableCell className="text-right">
+  {new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: transaction.currency || portfolioCurrency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(transaction.unitPrice)}
+</TableCell>
                       <TableCell>{transaction.currency}</TableCell>
                       <TableCell className="text-right">{transaction.conversionRate}</TableCell>
                       <TableCell className="text-right">{formatCurrency(transaction.fees)}</TableCell>

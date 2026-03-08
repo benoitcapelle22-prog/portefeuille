@@ -405,7 +405,14 @@ export function CurrentPositions({
                       {showSector && <TableCell>{position.sector}</TableCell>}
                       {showCurrency && <TableCell className="text-center">{positionCurrency}</TableCell>}
                       <TableCell className="text-right">{position.quantity}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(position.pru, portfolioCurrency)}</TableCell>
+                      <TableCell className="text-right">
+  {new Intl.NumberFormat("fr-FR", { 
+    style: "currency", 
+    currency: portfolioCurrency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4
+  }).format(position.pru)}
+</TableCell>
 
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-0.5">
