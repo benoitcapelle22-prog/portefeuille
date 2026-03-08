@@ -35,6 +35,7 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
   const [error, setError] = useState<string>("");
   const [step, setStep] = useState<"upload" | "mapping" | "preview">("upload");
   const [report, setReport] = useState<string>("");
+  const [importDone, setImportDone] = useState(false);
 
   const fields = [
     { key: "portfolioCode", label: "Code portefeuille", required: false },
@@ -59,6 +60,7 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
     setError("");
     setReport("");
     setStep("upload");
+    setImportDone(false);
   };
 
   const downloadText = (filename: string, content: string) => {
@@ -121,6 +123,7 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
     setFile(selectedFile);
     setError("");
     setReport("");
+    setImportDone(false);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -209,7 +212,13 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
             else if (type.includes("retrait") || type.includes("withdrawal")) type = "retrait";
 
             return {
-              date: getField("date"),
+              date: (() => {
+  const raw = getField("date");
+  // Convertit DD/MM/YYYY en YYYY-MM-DD
+  const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  return raw;
+})(),
               code: (getField("code") || "").trim().toUpperCase(),
               name: (getField("name") || "").trim(),
               type: type as "achat" | "vente" | "dividende" | "depot" | "retrait",
@@ -231,29 +240,32 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
           })
           .filter((t) => t.code && t.date);
 
-        // Trier par date avant import (achats avant ventes à date égale)
         const sorted = [...transactions].sort((a, b) => {
           const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
           if (dateDiff !== 0) return dateDiff;
-          // À date égale : achats en premier
           if (a.type === "achat" && b.type !== "achat") return -1;
           if (a.type !== "achat" && b.type === "achat") return 1;
           return 0;
         });
 
-        // Rapport informatif uniquement — ne bloque PAS l'import
-        const rep = buildValidationReport(sorted);
-        setReport(rep);
-        setError("");
+        const validationReport = buildValidationReport(sorted);
 
         try {
           await onImportTransactions(sorted);
-          setOpen(false);
-          resetForm();
+          // Import réussi : afficher le rapport et rester ouvert
+          setReport(
+            validationReport +
+            "\n\n✅ Import terminé avec succès — " + sorted.length + " transaction(s) importée(s)."
+          );
+          setImportDone(true);
+          setStep("upload");
+          setFile(null);
+          setError("");
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           setError("Import échoué: " + msg);
-          setReport((prev) => prev + "\n\n❌ Erreur lors de l'application dans l'app :\n" + msg);
+          setReport(validationReport + "\n\n❌ Erreur lors de l'application dans l'app :\n" + msg);
+          setImportDone(false);
         }
       };
 
@@ -311,7 +323,13 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <Label>Rapport</Label>
-                <Button variant="outline" onClick={() => downloadText("rapport_import.txt", report)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadText("rapport_import.txt", report)}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
                   Télécharger le rapport
                 </Button>
               </div>
@@ -319,7 +337,7 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
             </div>
           )}
 
-          {step === "upload" && (
+          {step === "upload" && !importDone && (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="csv-file">Fichier CSV</Label>
@@ -328,7 +346,6 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
                   Le fichier doit contenir au minimum les colonnes : date, code, nom, type, quantité, prix unitaire
                 </p>
               </div>
-
               <div className="flex items-center gap-2">
                 <Button variant="outline" onClick={downloadTemplate} className="gap-2">
                   <Download className="h-4 w-4" />
@@ -345,13 +362,11 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
                 <p className="text-sm text-muted-foreground">
                   Associez chaque colonne de votre fichier aux champs requis
                 </p>
-
                 {fields.map((field) => (
                   <div key={field.key} className="flex items-center gap-3">
                     <Label className="w-40">
                       {field.label} {field.required && <span className="text-red-500">*</span>}
                     </Label>
-
                     <Select
                       value={mapping[field.key] && mapping[field.key] !== "" ? mapping[field.key] : "__NONE__"}
                       onValueChange={(value) =>
@@ -364,7 +379,6 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
                       <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Sélectionner une colonne" />
                       </SelectTrigger>
-
                       <SelectContent>
                         <SelectItem value="__NONE__">-- Aucune --</SelectItem>
                         {headers.map((header, index) => (
@@ -382,11 +396,16 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Annuler
+          <Button
+            variant="outline"
+            onClick={() => { setOpen(false); resetForm(); }}
+          >
+            {importDone ? "Fermer" : "Annuler"}
           </Button>
 
-          {step === "upload" && file && <Button onClick={() => setStep("mapping")}>Continuer</Button>}
+          {step === "upload" && file && !importDone && (
+            <Button onClick={() => setStep("mapping")}>Continuer</Button>
+          )}
 
           {step === "mapping" && (
             <>
@@ -395,6 +414,12 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
               </Button>
               <Button onClick={handleImport}>Importer</Button>
             </>
+          )}
+
+          {importDone && (
+            <Button onClick={() => { resetForm(); }}>
+              Nouvel import
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>
