@@ -25,3 +25,4 @@ Thumbs.db
 .vscode
 .vercel
 .env*.local
+.env.production
