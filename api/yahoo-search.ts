@@ -7,7 +7,7 @@ type SearchResult = {
 };
 
 const cache = new Map<string, { result: SearchResult; expiresAt: number }>();
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -29,7 +29,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  // Cache
   const now = Date.now();
   const cached = cache.get(q);
   if (cached && cached.expiresAt > now) {
@@ -39,13 +38,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Étape 1 : autocomplete Yahoo Finance v8
-    const searchUrl = `https://query1.finance.yahoo.com/v8/finance/search?q=${encodeURIComponent(q)}&lang=en-US&region=US&quotesCount=5&newsCount=0`;
+    const controller1 = new AbortController();
+    const timeout1 = setTimeout(() => controller1.abort(), 6000);
 
+    const searchUrl = `https://query1.finance.yahoo.com/v8/finance/search?q=${encodeURIComponent(q)}&lang=en-US&region=US&quotesCount=5&newsCount=0`;
     const searchRes = await fetch(searchUrl, {
       headers: HEADERS,
-      signal: AbortSignal.timeout(6000),
+      signal: controller1.signal,
     });
+    clearTimeout(timeout1);
 
     if (!searchRes.ok) {
       console.error(`Yahoo search HTTP ${searchRes.status} for ${q}`);
@@ -56,20 +57,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const searchData = await searchRes.json();
     const quotes: any[] = searchData?.quotes ?? [];
 
-    // Correspondance exacte sur le symbole
     const exact = quotes.find(item => item.symbol?.toUpperCase() === q);
     const best = exact ?? quotes[0];
     const name = best?.longname ?? best?.shortname ?? null;
     const yahooSymbol = best?.symbol ?? q;
 
-    // Étape 2 : secteur via quoteSummary v10
     let sector: string | null = null;
     try {
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 6000);
+
       const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol)}?modules=assetProfile&corsDomain=finance.yahoo.com`;
       const summaryRes = await fetch(summaryUrl, {
         headers: HEADERS,
-        signal: AbortSignal.timeout(6000),
+        signal: controller2.signal,
       });
+      clearTimeout(timeout2);
 
       if (summaryRes.ok) {
         const summaryData = await summaryRes.json();

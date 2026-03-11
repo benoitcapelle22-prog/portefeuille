@@ -7,7 +7,7 @@ type SearchResult = {
 };
 
 const cache = new Map<string, { result: SearchResult; expiresAt: number }>();
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const q = typeof req.query.q === "string" ? req.query.q.trim().toUpperCase() : "";
@@ -23,7 +23,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  // Cache
   const now = Date.now();
   const cached = cache.get(q);
   if (cached && cached.expiresAt > now) {
@@ -33,12 +32,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Nouvel endpoint FMP stable
-    const url = `https://financialmodelingprep.com/stable/profile?symbol=${encodeURIComponent(q)}&apikey=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(6000),
-    });
+    const url = `https://financialmodelingprep.com/stable/profile?symbol=${encodeURIComponent(q)}&apikey=${apiKey}`;
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       console.error(`FMP profile HTTP ${response.status} for ${q}`);
@@ -49,11 +48,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data = await response.json();
     const profile = Array.isArray(data) ? data[0] : null;
 
-    const name = profile?.companyName ?? null;
-    const sector = profile?.sector ?? null;
+    const result: SearchResult = {
+      symbol: q,
+      name: profile?.companyName ?? null,
+      sector: profile?.sector ?? null,
+    };
 
-    const result: SearchResult = { symbol: q, name, sector };
-    if (name) cache.set(q, { result, expiresAt: now + CACHE_TTL_MS });
+    if (result.name) cache.set(q, { result, expiresAt: now + CACHE_TTL_MS });
 
     res.setHeader("Cache-Control", "s-maxage=86400");
     res.status(200).json(result);
