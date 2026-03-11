@@ -185,7 +185,6 @@ export function TransactionHistory({
                     <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("quantity")}>Quantité <SortIcon col="quantity" /></TableHead>
                     <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("unitPrice")}>Prix unitaire <SortIcon col="unitPrice" /></TableHead>
                     <TableHead className={thClass} onClick={() => handleSort("currency")}>Devise <SortIcon col="currency" /></TableHead>
-                    <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("conversionRate")}>Taux conversion <SortIcon col="conversionRate" /></TableHead>
                     <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("fees")}>Frais <SortIcon col="fees" /></TableHead>
                     <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("tff")}>TFF <SortIcon col="tff" /></TableHead>
                     <TableHead className={`text-right ${thClass}`} onClick={() => handleSort("total")}>Total <SortIcon col="total" /></TableHead>
@@ -212,7 +211,6 @@ export function TransactionHistory({
   }).format(transaction.unitPrice)}
 </TableCell>
                       <TableCell>{transaction.currency}</TableCell>
-                      <TableCell className="text-right">{transaction.conversionRate}</TableCell>
                       <TableCell className="text-right">{formatCurrency(transaction.fees)}</TableCell>
                       <TableCell className="text-right">{transaction.type === "vente" ? "-" : formatCurrency(transaction.tff)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(getTotal(transaction))}</TableCell>

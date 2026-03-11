@@ -21,6 +21,15 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/yahoo-proxy/, ''),
       },
+      '/api/ticker': {
+        target: 'https://query1.finance.yahoo.com',
+        changeOrigin: true,
+        rewrite: (path) => {
+          const url = new URL('http://localhost' + path);
+          const symbol = url.searchParams.get('symbol') || '';
+          return `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+        },
+      },
     },
   },
 })

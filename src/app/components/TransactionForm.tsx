@@ -55,13 +55,11 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ✅ pour ne pas écraser si tu modifies le champ nom
   const nameTouchedRef = useRef(false);
   const [nameAuto, setNameAuto] = useState(false);
 
   const selectedPortfolio = portfolios?.find(p => p.id === selectedPortfolioId) || currentPortfolio;
 
-  // Recherche automatique : cours (api/quotes) + nom (api/ticker) + secteur (api/stock-search si dispo)
   useEffect(() => {
     const trimmed = code.trim().toUpperCase();
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -75,42 +73,42 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     setQuoteStatus("loading");
 
     debounceRef.current = setTimeout(async () => {
-      try {
-        const [quoteRes, tickerRes, stockRes] = await Promise.all([
-          fetch(`/api/quotes?symbols=${encodeURIComponent(trimmed)}`).then(r => (r.ok ? r.json() : null)),
-          fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => (r.ok ? r.json() : null)),
-          fetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`).then(r => (r.ok ? r.json() : null)),
-        ]);
+      const [quoteRes, tickerRes, stockRes] = await Promise.all([
+        fetch(`/api/quotes?symbols=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
 
-        // Cours
-        const quotes: any[] = quoteRes?.quotes ?? [];
-        const quote = quotes.find((q: any) => String(q.symbol || "").toUpperCase() === trimmed);
-        const price = quote?.price ?? null;
+      // Cours
+      const quotes: any[] = quoteRes?.quotes ?? [];
+      const quote = quotes.find((q: any) => String(q.symbol || "").toUpperCase() === trimmed);
+      const price = quote?.price ?? null;
 
-        if (price != null) {
-          setLivePrice(price);
-          setQuoteStatus("found");
-          if (!unitPrice) setUnitPrice(String(price));
-        } else {
-          setLivePrice(null);
-          setQuoteStatus("not_found");
-        }
-
-        // ✅ Nom via /api/ticker
-        const fetchedName = typeof tickerRes?.name === "string" ? tickerRes.name : null;
-        if (fetchedName && !nameTouchedRef.current) {
-          if (!name || nameAuto) {
-            setName(fetchedName);
-            setNameAuto(true);
-          }
-        }
-
-        // Secteur (si dispo)
-        if (!sector && stockRes?.sector) setSector(stockRes.sector);
-      } catch {
+      if (price != null) {
+        setLivePrice(price);
+        setQuoteStatus("found");
+        if (!unitPrice) setUnitPrice(String(price));
+      } else {
         setLivePrice(null);
-        setQuoteStatus("error");
+        setQuoteStatus("not_found");
       }
+
+      // Nom via /api/ticker (réponse Yahoo brute en dev, ou { name } en prod)
+      const meta = tickerRes?.chart?.result?.[0]?.meta;
+      const fetchedName: string | null =
+        (typeof tickerRes?.name === "string" ? tickerRes.name : null) ||
+        meta?.longName ||
+        meta?.shortName ||
+        null;
+      if (fetchedName && !nameTouchedRef.current) {
+        if (!name || nameAuto) {
+          setName(fetchedName);
+          setNameAuto(true);
+        }
+      }
+
+      // Secteur
+      if (!sector && stockRes?.sector) setSector(stockRes.sector);
     }, 900);
 
     return () => {
@@ -221,7 +219,6 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     setQuoteStatus("idle");
     setLivePrice(null);
 
-    // reset auto flags
     nameTouchedRef.current = false;
     setNameAuto(false);
   };
