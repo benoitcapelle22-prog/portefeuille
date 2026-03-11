@@ -241,10 +241,11 @@ export function PortfolioLayout() {
     const ok = window.confirm("⚠️ Supprimer toutes les données ?\n\nContinuer ?");
     if (!ok) return;
     try {
-      const allPortfolios = await getPortfolios();
-      for (const p of allPortfolios) {
-        await dbDeletePortfolio(p.id); // cascade supprime tout
-      }
+      await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('positions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('closed_positions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('daily_prices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('portfolios').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('settings').delete().neq('key', '__never__');
       alert("✅ Base vidée. L'application va se recharger.");
       window.location.reload();
@@ -391,7 +392,7 @@ export function PortfolioLayout() {
     const portfolio = portfolios.find(p => p.id === portfolioId);
     if (portfolio) await dbUpdatePortfolio(portfolioId, { cash: (portfolio.cash || 0) + totalSale });
 
-    const purchaseTx = newTransactions.filter(t => t.code === tx.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+    const purchaseTx = newTransactions.filter(t => t.code === tx.code && t.type === "achat").sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
     const purchaseDate = new Date(purchaseTx?.date || tx.date);
     const saleDate = new Date(tx.date);
     const dividends = newTransactions.filter(t => t.code === tx.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
@@ -428,7 +429,16 @@ export function PortfolioLayout() {
     const positions: DBPosition[] = [...existingPos];
     const closedPositions: DBClosedPosition[] = [...existingClosed];
 
-    for (const tx of transactions) {
+    // Trier les transactions par date avant traitement
+    const sortedTransactions = [...transactions].sort((a, b) => {
+      const dateDiff = parseDate(a.date) - parseDate(b.date);
+      if (dateDiff !== 0) return dateDiff;
+      if (a.type === "achat" && b.type === "vente") return -1;
+      if (a.type === "vente" && b.type === "achat") return 1;
+      return 0;
+    });
+
+    for (const tx of sortedTransactions) {
       const newTx: DBTransaction = { ...tx, id: crypto.randomUUID(), portfolioId: targetPortfolioId };
       allTx.push(newTx);
       const txCode = (tx.code || "").trim().toUpperCase();
@@ -453,7 +463,7 @@ export function PortfolioLayout() {
         const totalSale = tx.quantity * convertedUnitPrice - (tx.fees || 0) - (tx.tff || 0);
         const totalPurchase = tx.quantity * pos.pru;
         const gainLoss = totalSale - totalPurchase;
-        const purchaseTx = allTx.filter(t => (t.code || "").trim().toUpperCase() === txCode && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+        const purchaseTx = allTx.filter(t => (t.code || "").trim().toUpperCase() === txCode && t.type === "achat").sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
         closedPositions.push({ id: crypto.randomUUID(), portfolioId: targetPortfolioId, code: tx.code, name: tx.name, purchaseDate: purchaseTx?.date || tx.date, saleDate: tx.date, quantity: tx.quantity, pru: pos.pru, totalPurchase, totalSale, averageSalePrice: totalSale / tx.quantity, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends: 0, sector: pos.sector });
         const newQuantity = pos.quantity - tx.quantity;
         if (newQuantity === 0) positions.splice(idx, 1);
@@ -471,6 +481,18 @@ export function PortfolioLayout() {
   };
 
   // ============================================================
+  // HELPER : parse date DD/MM/YYYY ou YYYY-MM-DD
+  // ============================================================
+
+  const parseDate = (d: string): number => {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) {
+      const [day, month, year] = d.split('/');
+      return new Date(`${year}-${month}-${day}`).getTime();
+    }
+    return new Date(d).getTime();
+  };
+
+  // ============================================================
   // DELETE TRANSACTION (recalcul complet)
   // ============================================================
 
@@ -485,11 +507,17 @@ export function PortfolioLayout() {
 
     updatedTransactions
       .filter(t => t.type === "achat" || t.type === "vente")
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .sort((a, b) => {
+        const dateDiff = parseDate(a.date) - parseDate(b.date);
+        if (dateDiff !== 0) return dateDiff;
+        if (a.type === "achat" && b.type === "vente") return -1;
+        if (a.type === "vente" && b.type === "achat") return 1;
+        return 0;
+      })
       .forEach(transaction => {
         if (transaction.type === "achat") {
           const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-          const totalCost = transaction.quantity * convertedUnitPrice + transaction.fees * transaction.conversionRate + transaction.tff * transaction.conversionRate;
+          const totalCost = transaction.quantity * convertedUnitPrice + (transaction.fees || 0) + (transaction.tff || 0);
           const existing = newPositions.find(p => p.code === transaction.code);
           if (existing) {
             const newTotalCost = existing.totalCost + totalCost;
@@ -502,10 +530,10 @@ export function PortfolioLayout() {
           const existing = newPositions.find(p => p.code === transaction.code);
           if (existing && existing.quantity >= transaction.quantity) {
             const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-            const totalSale = transaction.quantity * convertedUnitPrice - transaction.fees * transaction.conversionRate - transaction.tff * transaction.conversionRate;
+            const totalSale = transaction.quantity * convertedUnitPrice - (transaction.fees || 0) - (transaction.tff || 0);
             const totalPurchase = transaction.quantity * existing.pru;
             const gainLoss = totalSale - totalPurchase;
-            const purchaseTx = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+            const purchaseTx = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
             const purchaseDate = new Date(purchaseTx?.date || transaction.date);
             const saleDate = new Date(transaction.date);
             const dividends = updatedTransactions.filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
@@ -524,75 +552,81 @@ export function PortfolioLayout() {
     await refreshData();
   };
 
+  // ============================================================
+  // EDIT TRANSACTION (recalcul complet)
+  // ============================================================
 
-const handleEditTransaction = async (updated: Transaction) => {
-  if (!currentPortfolioId || currentPortfolioId === "ALL") return;
+  const handleEditTransaction = async (updated: Transaction) => {
+    if (!currentPortfolioId || currentPortfolioId === "ALL") return;
 
-  await supabase.from("transactions").update({
-    date: updated.date,
-    code: updated.code?.toUpperCase(),
-    name: updated.name,
-    type: updated.type,
-    quantity: Number(updated.quantity) || 0,
-    unit_price: Number(updated.unitPrice) || 0,
-    fees: Number(updated.fees) || 0,
-    tff: Number(updated.tff) || 0,
-    currency: updated.currency,
-    conversion_rate: Number(updated.conversionRate) || 1,
-    tax: updated.type === "dividende" ? ((updated as any).tax ?? null) : null,
-    sector: (updated as any).sector ?? null,
-  }).eq("id", updated.id);
+    await supabase.from("transactions").update({
+      date: updated.date,
+      code: updated.code?.toUpperCase(),
+      name: updated.name,
+      type: updated.type,
+      quantity: Number(updated.quantity) || 0,
+      unit_price: Number(updated.unitPrice) || 0,
+      fees: Number(updated.fees) || 0,
+      tff: Number(updated.tff) || 0,
+      currency: updated.currency,
+      conversion_rate: Number(updated.conversionRate) || 1,
+      tax: updated.type === "dividende" ? ((updated as any).tax ?? null) : null,
+      sector: (updated as any).sector ?? null,
+    }).eq("id", updated.id);
 
-  const updatedTransactions = currentData.transactions.map(t =>
-    t.id === updated.id ? updated : t
-  );
+    const updatedTransactions = currentData.transactions.map(t =>
+      t.id === updated.id ? updated : t
+    );
 
-  // Recalcul complet (même logique que handleDeleteTransaction)
-  const newPositions: DBPosition[] = [];
-  const newClosedPositions: DBClosedPosition[] = [];
+    const newPositions: DBPosition[] = [];
+    const newClosedPositions: DBClosedPosition[] = [];
 
-  updatedTransactions
-    .filter(t => t.type === "achat" || t.type === "vente")
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .forEach(transaction => {
-      if (transaction.type === "achat") {
-        const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-        const totalCost = transaction.quantity * convertedUnitPrice + transaction.fees * transaction.conversionRate + transaction.tff * transaction.conversionRate;
-        const existing = newPositions.find(p => p.code === transaction.code);
-        if (existing) {
-          const newTotalCost = existing.totalCost + totalCost;
-          const newQuantity = existing.quantity + transaction.quantity;
-          existing.quantity = newQuantity; existing.totalCost = newTotalCost; existing.pru = newTotalCost / newQuantity;
-        } else {
-          newPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
-        }
-      } else if (transaction.type === "vente") {
-        const existing = newPositions.find(p => p.code === transaction.code);
-        if (existing && existing.quantity >= transaction.quantity) {
+    updatedTransactions
+      .filter(t => t.type === "achat" || t.type === "vente")
+      .sort((a, b) => {
+        const dateDiff = parseDate(a.date) - parseDate(b.date);
+        if (dateDiff !== 0) return dateDiff;
+        if (a.type === "achat" && b.type === "vente") return -1;
+        if (a.type === "vente" && b.type === "achat") return 1;
+        return 0;
+      })
+      .forEach(transaction => {
+        if (transaction.type === "achat") {
           const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
-          const totalSale = transaction.quantity * convertedUnitPrice - transaction.fees * transaction.conversionRate - transaction.tff * transaction.conversionRate;
-          const totalPurchase = transaction.quantity * existing.pru;
-          const gainLoss = totalSale - totalPurchase;
-          const purchaseTx = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
-          const purchaseDate = new Date(purchaseTx?.date || transaction.date);
-          const saleDate = new Date(transaction.date);
-          const dividends = updatedTransactions.filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
-          newClosedPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, purchaseDate: purchaseTx?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existing.pru, averageSalePrice: totalSale / transaction.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existing.sector });
-          const newQuantity = existing.quantity - transaction.quantity;
-          if (newQuantity === 0) newPositions.splice(newPositions.indexOf(existing), 1);
-          else { existing.quantity = newQuantity; existing.totalCost -= totalPurchase; }
+          const totalCost = transaction.quantity * convertedUnitPrice + (transaction.fees || 0) + (transaction.tff || 0);
+          const existing = newPositions.find(p => p.code === transaction.code);
+          if (existing) {
+            const newTotalCost = existing.totalCost + totalCost;
+            const newQuantity = existing.quantity + transaction.quantity;
+            existing.quantity = newQuantity; existing.totalCost = newTotalCost; existing.pru = newTotalCost / newQuantity;
+          } else {
+            newPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
+          }
+        } else if (transaction.type === "vente") {
+          const existing = newPositions.find(p => p.code === transaction.code);
+          if (existing && existing.quantity >= transaction.quantity) {
+            const convertedUnitPrice = transaction.unitPrice * transaction.conversionRate;
+            const totalSale = transaction.quantity * convertedUnitPrice - (transaction.fees || 0) - (transaction.tff || 0);
+            const totalPurchase = transaction.quantity * existing.pru;
+            const gainLoss = totalSale - totalPurchase;
+            const purchaseTx = updatedTransactions.filter(t => t.code === transaction.code && t.type === "achat").sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+            const purchaseDate = new Date(purchaseTx?.date || transaction.date);
+            const saleDate = new Date(transaction.date);
+            const dividends = updatedTransactions.filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
+            newClosedPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, purchaseDate: purchaseTx?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existing.pru, averageSalePrice: totalSale / transaction.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existing.sector });
+            const newQuantity = existing.quantity - transaction.quantity;
+            if (newQuantity === 0) newPositions.splice(newPositions.indexOf(existing), 1);
+            else { existing.quantity = newQuantity; existing.totalCost -= totalPurchase; }
+          }
         }
-      }
-    });
+      });
 
-  await deletePositionsByPortfolio(currentPortfolioId);
-  await deleteClosedPositionsByPortfolio(currentPortfolioId);
-  await bulkUpsertPositions(newPositions);
-  await bulkAddClosedPositions(newClosedPositions);
-  await refreshData();
-};
-
-
+    await deletePositionsByPortfolio(currentPortfolioId);
+    await deleteClosedPositionsByPortfolio(currentPortfolioId);
+    await bulkUpsertPositions(newPositions);
+    await bulkAddClosedPositions(newClosedPositions);
+    await refreshData();
+  };
 
   // ============================================================
   // ACTIONS POSITIONS

@@ -336,7 +336,7 @@ export async function deleteClosedPositionsByPortfolio(portfolioId: string): Pro
 // ============================================================
 
 export async function getSetting(key: string): Promise<string | null> {
-  const { data, error } = await supabase.from('settings').select('value').eq('key', key).single();
+  const { data, error } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
   if (error) return null;
   return data?.value ?? null;
 }
