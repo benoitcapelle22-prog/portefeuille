@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Search, X, Eye, EyeOff, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { Search, X, Eye, EyeOff, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 export interface ClosedPosition {
   code: string;
@@ -32,6 +32,8 @@ interface ClosedPositionsProps {
   portfolioCurrency?: string;
 }
 
+const PAGE_SIZE = 10;
+
 export function ClosedPositions({ closedPositions, transactions, portfolioCurrency = 'EUR' }: ClosedPositionsProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -39,6 +41,12 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
   const [showSector, setShowSector] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("saleDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page quand les filtres ou le tri changent
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchFilter, startDate, endDate, sortKey, sortDir]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -97,13 +105,24 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
     return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
+  // Totaux calculés sur toutes les positions filtrées (pas seulement la page courante)
   const totalGainLoss = filteredPositions.reduce((sum, pos) => sum + pos.gainLoss, 0);
   const totalInvested = filteredPositions.reduce((sum, pos) => sum + (pos.pru * pos.quantity), 0);
   const totalDividends = filteredPositions.reduce((sum, pos) => sum + (pos.dividends || 0), 0);
   const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
 
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sortedPositions.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedPositions = sortedPositions.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
+
   const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
   const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); };
+
+  const hasPortfolioCodeColumn = closedPositions.some(p => p.portfolioCode);
 
   return (
     <Card>
@@ -140,7 +159,7 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
             <Table>
               <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                 <TableRow>
-                  {closedPositions.some(p => p.portfolioCode) && <TableHead>Portefeuille</TableHead>}
+                  {hasPortfolioCodeColumn && <TableHead>Portefeuille</TableHead>}
                   <Th col="saleDate">Date de vente</Th>
                   <Th col="code">Code</Th>
                   <Th col="name">Nom</Th>
@@ -154,35 +173,33 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedPositions.length === 0 && (
+                {paginatedPositions.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Aucune position clôturée</TableCell>
                   </TableRow>
                 )}
-                {sortedPositions.map((position, index) => {
-                  const hasPortfolioCodeColumn = closedPositions.some(p => p.portfolioCode);
-                  return (
-                    <TableRow key={`${position.portfolioCode || ''}-${position.code}-${index}`}>
-                      {hasPortfolioCodeColumn && <TableCell className="font-medium">{position.portfolioCode || '-'}</TableCell>}
-                      <TableCell>{formatDate(position.saleDate)}</TableCell>
-                      <TableCell className="font-medium">{position.code}</TableCell>
-                      <TableCell>{position.name}</TableCell>
-                      {showSector && <TableCell>{position.sector}</TableCell>}
-                      <TableCell className="text-right">{position.quantity}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(position.pru * position.quantity)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(position.averageSalePrice * position.quantity)}</TableCell>
-                      <TableCell className={`text-right ${position.gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatCurrency(position.gainLoss)}
-                      </TableCell>
-                      <TableCell className={`text-right ${position.gainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercent(position.gainLossPercent)}
-                      </TableCell>
-                      <TableCell className="text-right">{formatCurrency(position.dividends || 0)}</TableCell>
-                    </TableRow>
-                  );
-                })}
+                {paginatedPositions.map((position, index) => (
+                  <TableRow key={`${position.portfolioCode || ''}-${position.code}-${index}`}>
+                    {hasPortfolioCodeColumn && <TableCell className="font-medium">{position.portfolioCode || '-'}</TableCell>}
+                    <TableCell>{formatDate(position.saleDate)}</TableCell>
+                    <TableCell className="font-medium">{position.code}</TableCell>
+                    <TableCell>{position.name}</TableCell>
+                    {showSector && <TableCell>{position.sector}</TableCell>}
+                    <TableCell className="text-right">{position.quantity}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(position.pru * position.quantity)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(position.averageSalePrice * position.quantity)}</TableCell>
+                    <TableCell className={`text-right ${position.gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(position.gainLoss)}
+                    </TableCell>
+                    <TableCell className={`text-right ${position.gainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatPercent(position.gainLossPercent)}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCurrency(position.dividends || 0)}</TableCell>
+                  </TableRow>
+                ))}
+                {/* Ligne TOTAL — toujours sur toutes les positions filtrées */}
                 <TableRow className="border-t-2 font-bold bg-muted/50">
-                  {closedPositions.some(p => p.portfolioCode) && <TableCell />}
+                  {hasPortfolioCodeColumn && <TableCell />}
                   <TableCell colSpan={showSector ? 5 : 4}>TOTAL</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested + totalGainLoss)}</TableCell>
@@ -193,6 +210,75 @@ export function ClosedPositions({ closedPositions, transactions, portfolioCurren
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-muted-foreground">
+                {sortedPositions.length} position{sortedPositions.length > 1 ? "s" : ""}
+                {hasActiveFilters ? " (filtrées)" : ""}
+                {" — "}page {safePage} / {totalPages}
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={safePage === 1}
+                >
+                  «
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                  .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, idx) =>
+                    p === "..." ? (
+                      <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground text-sm">…</span>
+                    ) : (
+                      <Button
+                        key={p}
+                        variant={safePage === p ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(p as number)}
+                        className="w-8"
+                      >
+                        {p}
+                      </Button>
+                    )
+                  )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={safePage === totalPages}
+                >
+                  »
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
