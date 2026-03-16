@@ -4,8 +4,8 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Trash2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Trash2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
 import { EditTransactionDialog, type TransactionRow } from "./EditTransactionDialog";
 
 interface TransactionHistoryProps {
@@ -21,6 +21,8 @@ type SortKey =
 
 type SortDir = "asc" | "desc" | null;
 
+const PAGE_SIZE = 10;
+
 export function TransactionHistory({
   transactions,
   onDeleteTransaction,
@@ -34,6 +36,12 @@ export function TransactionHistory({
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<TransactionRow | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page quand les filtres ou le tri changent
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchFilter, startDate, endDate, sortKey, sortDir]);
 
   const formatCurrency = (value: number, currency?: string) => {
     return new Intl.NumberFormat("fr-FR", {
@@ -102,6 +110,14 @@ export function TransactionHistory({
     if (typeof valA === "string") return sortDir === "asc" ? valA.localeCompare(valB, "fr") : valB.localeCompare(valA, "fr");
     return sortDir === "asc" ? valA - valB : valB - valA;
   });
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedTransactions = sortedTransactions.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
   const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); };
@@ -192,7 +208,7 @@ export function TransactionHistory({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedTransactions.map((transaction) => (
+                  {paginatedTransactions.map((transaction) => (
                     <TableRow key={transaction.id}>
                       {hasPortfolioCodeColumn && (
                         <TableCell className="font-medium">{transaction.portfolioCode || "-"}</TableCell>
@@ -203,13 +219,13 @@ export function TransactionHistory({
                       <TableCell>{getTypeBadge(transaction.type)}</TableCell>
                       <TableCell className="text-right">{transaction.quantity}</TableCell>
                       <TableCell className="text-right">
-  {new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: transaction.currency || portfolioCurrency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  }).format(transaction.unitPrice)}
-</TableCell>
+                        {new Intl.NumberFormat("fr-FR", {
+                          style: "currency",
+                          currency: transaction.currency || portfolioCurrency,
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 6,
+                        }).format(transaction.unitPrice)}
+                      </TableCell>
                       <TableCell>{transaction.currency}</TableCell>
                       <TableCell className="text-right">{formatCurrency(transaction.fees)}</TableCell>
                       <TableCell className="text-right">{transaction.type === "vente" ? "-" : formatCurrency(transaction.tff)}</TableCell>
@@ -233,6 +249,76 @@ export function TransactionHistory({
                 </TableBody>
               </Table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-muted-foreground">
+                  {sortedTransactions.length} transaction{sortedTransactions.length > 1 ? "s" : ""}
+                  {hasActiveFilters ? " (filtrées)" : ""}
+                  {" — "}page {safePage} / {totalPages}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safePage === 1}
+                  >
+                    «
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+
+                  {/* Numéros de pages */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                    .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, idx) =>
+                      p === "..." ? (
+                        <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground text-sm">…</span>
+                      ) : (
+                        <Button
+                          key={p}
+                          variant={safePage === p ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(p as number)}
+                          className="w-8"
+                        >
+                          {p}
+                        </Button>
+                      )
+                    )}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safePage === totalPages}
+                  >
+                    »
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <EditTransactionDialog
               open={editOpen}
