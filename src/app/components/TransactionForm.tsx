@@ -73,43 +73,34 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     setQuoteStatus("loading");
 
     debounceRef.current = setTimeout(async () => {
-      const [quoteRes, tickerRes, stockRes] = await Promise.all([
-        fetch(`/api/quotes?symbols=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
-      ]);
+  const [tickerRes, stockRes] = await Promise.all([
+    fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
 
-      // Cours
-      const quotes: any[] = quoteRes?.quotes ?? [];
-      const quote = quotes.find((q: any) => String(q.symbol || "").toUpperCase() === trimmed);
-      const price = quote?.price ?? null;
+  // Cours + Nom via /api/ticker
+  const price: number | null = tickerRes?.price ?? null;
+  const fetchedName: string | null = tickerRes?.name ?? null;
 
-      if (price != null) {
-        setLivePrice(price);
-        setQuoteStatus("found");
-        if (!unitPrice) setUnitPrice(String(price));
-      } else {
-        setLivePrice(null);
-        setQuoteStatus("not_found");
-      }
+  if (price != null) {
+    setLivePrice(price);
+    setQuoteStatus("found");
+    if (!unitPrice) setUnitPrice(String(price));
+  } else {
+    setLivePrice(null);
+    setQuoteStatus("not_found");
+  }
 
-      // Nom via /api/ticker (réponse Yahoo brute en dev, ou { name } en prod)
-      const meta = tickerRes?.chart?.result?.[0]?.meta;
-      const fetchedName: string | null =
-        (typeof tickerRes?.name === "string" ? tickerRes.name : null) ||
-        meta?.longName ||
-        meta?.shortName ||
-        null;
-      if (fetchedName && !nameTouchedRef.current) {
-        if (!name || nameAuto) {
-          setName(fetchedName);
-          setNameAuto(true);
-        }
-      }
+  if (fetchedName && !nameTouchedRef.current) {
+    if (!name || nameAuto) {
+      setName(fetchedName);
+      setNameAuto(true);
+    }
+  }
 
-      // Secteur
-      if (!sector && stockRes?.sector) setSector(stockRes.sector);
-    }, 900);
+  // Secteur via /api/yahoo-search
+  if (!sector && stockRes?.sector) setSector(stockRes.sector);
+}, 900);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
