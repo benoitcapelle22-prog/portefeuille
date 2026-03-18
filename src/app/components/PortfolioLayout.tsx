@@ -73,6 +73,9 @@ export interface PortfolioContextType {
   setDialogOpen: (open: boolean) => void;
   dialogInitialData: any;
   refreshData: () => Promise<void>;
+  // ← NOUVEAU : valeur totale du portefeuille (positions valorisées + liquidités)
+  totalPortfolio: number;
+  setTotalPortfolio: (value: number) => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | null>(null);
@@ -93,6 +96,8 @@ export function PortfolioLayout() {
   const [isLoading, setIsLoading] = useState(true);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
+  // ← NOUVEAU
+  const [totalPortfolio, setTotalPortfolio] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ============================================================
@@ -429,7 +434,6 @@ export function PortfolioLayout() {
     const positions: DBPosition[] = [...existingPos];
     const closedPositions: DBClosedPosition[] = [...existingClosed];
 
-    // Trier les transactions par date avant traitement
     const sortedTransactions = [...transactions].sort((a, b) => {
       const dateDiff = parseDate(a.date) - parseDate(b.date);
       if (dateDiff !== 0) return dateDiff;
@@ -692,6 +696,9 @@ export function PortfolioLayout() {
     setDialogOpen,
     dialogInitialData,
     refreshData,
+    // ← NOUVEAU
+    totalPortfolio,
+    setTotalPortfolio,
   };
 
   if (isLoading) {

@@ -2,15 +2,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Position } from "./CurrentPositions";
 import { Transaction } from "./TransactionForm";
 import { ClosedPosition } from "./ClosedPositions";
-import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X } from "lucide-react";
-import { useState } from "react";
+import {
+  PieChart, Pie, Cell, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar
+} from "recharts";
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { useState, useMemo } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { AaplQuoteWidget } from "./AaplQuoteWidget";
 
-// Palette de couleurs pour les graphiques
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#8DD1E1', '#D084D0', '#A4DE6C'];
+
+type Tab = "valorisation" | "performance" | "trading";
 
 interface DashboardProps {
   positions: Position[];
@@ -18,524 +22,603 @@ interface DashboardProps {
   closedPositions: ClosedPosition[];
   portfolioCurrency?: string;
   cash?: number;
+  totalPortfolio?: number;
 }
 
-export function Dashboard({ positions, transactions, closedPositions, portfolioCurrency = "EUR", cash = 0 }: DashboardProps) {
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function getYear(dateStr: string): number {
+  // Supporte DD/MM/YYYY et YYYY-MM-DD
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    return parseInt(dateStr.split("/")[2]);
+  }
+  return new Date(dateStr).getFullYear();
+}
+
+function getMonth(dateStr: string): number {
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    return parseInt(dateStr.split("/")[1]) - 1;
+  }
+  return new Date(dateStr).getMonth();
+}
+
+function deltaColor(val: number, higherIsBetter = true) {
+  if (val === 0) return "text-muted-foreground";
+  return (val > 0) === higherIsBetter ? "text-green-600" : "text-red-600";
+}
+
+function DeltaBadge({ val, unit = "", higherIsBetter = true, fmt }: {
+  val: number;
+  unit?: string;
+  higherIsBetter?: boolean;
+  fmt?: (v: number) => string;
+}) {
+  const color = deltaColor(val, higherIsBetter);
+  const Icon = val > 0 ? ArrowUp : val < 0 ? ArrowDown : Minus;
+  const label = fmt ? fmt(Math.abs(val)) : `${Math.abs(val).toFixed(1)}${unit}`;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${color}`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
+// ── Calcul des stats pour une année ──────────────────────────────────────────
+
+function calcStats(closed: ClosedPosition[], year: number) {
+  const cp = closed.filter(p => getYear(p.saleDate) === year);
+  const successful = cp.filter(p => (p.gainLoss || 0) > 0);
+  const failed     = cp.filter(p => (p.gainLoss || 0) < 0);
+  const totalTrades = cp.length;
+  const successRate = totalTrades > 0 ? (successful.length / totalTrades) * 100 : 0;
+  const gains  = successful.reduce((s, p) => s + (p.gainLoss || 0), 0);
+  const losses = Math.abs(failed.reduce((s, p) => s + (p.gainLoss || 0), 0));
+  const ratio  = losses > 0 ? gains / losses : gains > 0 ? Infinity : 0;
+  const avgGain = successful.length > 0 ? gains / successful.length : 0;
+  const avgLoss = failed.length     > 0 ? losses / failed.length    : 0;
+  return { totalTrades, successful: successful.length, failed: failed.length, successRate, gains, losses, ratio, avgGain, avgLoss };
+}
+
+// ── Calcul courbe cumul mensuel pour une année ────────────────────────────────
+
+const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+
+function cumulByMonth(closed: ClosedPosition[], year: number): { month: string; value: number }[] {
+  const result: { month: string; value: number }[] = [];
+  let cumul = 0;
+  for (let m = 0; m < 12; m++) {
+    const trades = closed.filter(p => getYear(p.saleDate) === year && getMonth(p.saleDate) === m);
+    cumul += trades.reduce((s, p) => s + (p.gainLoss || 0), 0);
+    result.push({ month: MONTH_LABELS[m], value: cumul });
+  }
+  return result;
+}
+
+// ── Composant principal ───────────────────────────────────────────────────────
+
+export function Dashboard({
+  positions,
+  transactions,
+  closedPositions,
+  portfolioCurrency = "EUR",
+  cash = 0,
+  totalPortfolio: totalPortfolioProp,
+}: DashboardProps) {
+  const [activeTab, setActiveTab] = useState<Tab>("valorisation");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: portfolioCurrency
-    }).format(value);
-  };
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
 
-  // Filtrer les transactions par date
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("fr-FR", { style: "currency", currency: portfolioCurrency }).format(value);
+
   const filteredTransactions = transactions.filter(t => {
-    const transactionDate = new Date(t.date);
-    const matchesStart = !startDate || transactionDate >= new Date(startDate);
-    const matchesEnd = !endDate || transactionDate <= new Date(endDate);
-    return matchesStart && matchesEnd;
+    const d = new Date(t.date);
+    return (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate));
   });
 
-  // Filtrer les positions clôturées par date
   const filteredClosedPositions = closedPositions.filter(p => {
-    const saleDate = new Date(p.saleDate);
-    const matchesStart = !startDate || saleDate >= new Date(startDate);
-    const matchesEnd = !endDate || saleDate <= new Date(endDate);
-    return matchesStart && matchesEnd;
+    const d = new Date(p.saleDate);
+    return (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate));
   });
 
   const hasActiveFilters = startDate !== "" || endDate !== "";
+  const resetFilters = () => { setStartDate(""); setEndDate(""); };
 
-  const resetFilters = () => {
-    setStartDate("");
-    setEndDate("");
-  };
+  // Années disponibles dans les positions clôturées
+  const availableYears = useMemo(() => {
+    const years = Array.from(new Set(closedPositions.map(p => getYear(p.saleDate)))).sort((a, b) => b - a);
+    return years.length > 0 ? years : [currentYear];
+  }, [closedPositions]);
 
-  // Calculs des statistiques globales avec données filtrées
-  const totalInvested = positions.reduce((sum, pos) => sum + pos.totalCost, 0);
-  const totalValue = positions.reduce((sum, pos) => sum + (pos.totalValue || 0), 0);
-  const unrealizedGainLoss = totalValue - totalInvested;
+  // ── Calculs valorisation ──────────────────────────────────────────────────
+  const totalInvested  = positions.reduce((sum, p) => sum + p.totalCost, 0);
+  const totalValue     = positions.reduce((sum, p) => sum + (p.totalValue || p.totalCost), 0);
+  const totalPortfolio = (totalPortfolioProp !== undefined && totalPortfolioProp > 0)
+    ? totalPortfolioProp : totalValue + cash;
+
+  const unrealizedGainLoss        = totalValue - totalInvested;
   const unrealizedGainLossPercent = totalInvested > 0 ? (unrealizedGainLoss / totalInvested) * 100 : 0;
-
-  const realizedGainLoss = filteredClosedPositions.reduce((sum, pos) => sum + (pos.gainLoss || 0), 0);
-  
-  const totalDividends = filteredTransactions
+  const realizedGainLoss          = filteredClosedPositions.reduce((sum, p) => sum + (p.gainLoss || 0), 0);
+  const totalDividends            = filteredTransactions
     .filter(t => t.type === "dividende")
-    .reduce((sum, t) => sum + (t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0), 0);
-
-  const totalGainLoss = unrealizedGainLoss + realizedGainLoss + totalDividends;
+    .reduce((sum, t) => sum + t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0), 0);
+  const totalGainLoss        = unrealizedGainLoss + realizedGainLoss + totalDividends;
   const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
 
-  // Statistiques de succès/échec
-  const successfulTrades = filteredClosedPositions.filter(p => (p.gainLoss || 0) > 0).length;
-  const failedTrades = filteredClosedPositions.filter(p => (p.gainLoss || 0) < 0).length;
-  const breakEvenTrades = filteredClosedPositions.filter(p => (p.gainLoss || 0) === 0).length;
-  const totalTrades = filteredClosedPositions.length;
-  const successRate = totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0;
+  // ── Calculs performance ───────────────────────────────────────────────────
+  const performanceByStock = positions
+    .filter(p => p.latentGainLoss !== undefined)
+    .map(p => ({ name: p.code, gainLoss: p.latentGainLoss || 0, percent: p.latentGainLossPercent || 0 }))
+    .sort((a, b) => b.gainLoss - a.gainLoss).slice(0, 10);
 
-  // Ratio gain/perte
-  const totalGains = filteredClosedPositions
-    .filter(p => (p.gainLoss || 0) > 0)
-    .reduce((sum, p) => sum + (p.gainLoss || 0), 0);
-  const totalLosses = Math.abs(filteredClosedPositions
-    .filter(p => (p.gainLoss || 0) < 0)
-    .reduce((sum, p) => sum + (p.gainLoss || 0), 0));
-  const gainLossRatio = totalLosses > 0 ? totalGains / totalLosses : totalGains > 0 ? Infinity : 0;
-
-  // Données pour le graphique de répartition du portefeuille
-  const portfolioDistribution = positions
-    .filter(p => p.totalValue && p.totalValue > 0)
-    .map(p => ({
-      name: p.code,
-      value: p.totalValue || 0,
-      percent: totalValue > 0 ? ((p.totalValue || 0) / totalValue) * 100 : 0,
-    }))
-    .sort((a, b) => b.value - a.value);
-
-  // Données pour la répartition par secteur
-  const sectorDistribution = positions
-    .filter(p => p.totalValue && p.totalValue > 0)
-    .reduce((acc, p) => {
-      const sector = p.sector || "Non défini";
-      const existing = acc.find(item => item.sector === sector);
-      if (existing) {
-        existing.value += p.totalValue || 0;
-      } else {
-        acc.push({ sector, value: p.totalValue || 0 });
-      }
-      return acc;
-    }, [] as { sector: string; value: number }[])
-    .map(item => ({
-      name: item.sector,
-      value: item.value,
-      percent: totalValue > 0 ? (item.value / totalValue) * 100 : 0,
-    }))
-    .sort((a, b) => b.value - a.value);
-
-  // Données pour le graphique d'évolution du portefeuille
   const portfolioEvolution = filteredTransactions
     .filter(t => t.type === "achat" || t.type === "vente")
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .reduce((acc, transaction) => {
-      const date = new Date(transaction.date).toLocaleDateString('fr-FR', { 
-        month: 'short', 
-        year: 'numeric' 
-      });
-      
-      const lastEntry = acc[acc.length - 1];
-      const previousValue = lastEntry ? lastEntry.value : 0;
-      
-      let newValue = previousValue;
-      if (transaction.type === "achat") {
-        newValue += (transaction.quantity * transaction.unitPrice * transaction.conversionRate) + 
-                    (transaction.fees * transaction.conversionRate) + 
-                    (transaction.tff * transaction.conversionRate);
-      } else if (transaction.type === "vente") {
-        newValue -= (transaction.quantity * transaction.unitPrice * transaction.conversionRate) - 
-                    (transaction.fees * transaction.conversionRate) - 
-                    (transaction.tff * transaction.conversionRate);
-      }
-      
-      const existing = acc.find(item => item.date === date);
-      if (existing) {
-        existing.value = newValue;
-      } else {
-        acc.push({ date, value: newValue });
-      }
-      
+    .reduce((acc, t) => {
+      const date = new Date(t.date).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+      const prev = acc[acc.length - 1]?.value || 0;
+      let v = prev;
+      if (t.type === "achat") v += t.quantity * t.unitPrice * t.conversionRate + t.fees * t.conversionRate + t.tff * t.conversionRate;
+      else v -= t.quantity * t.unitPrice * t.conversionRate - t.fees * t.conversionRate - t.tff * t.conversionRate;
+      const ex = acc.find(i => i.date === date);
+      if (ex) ex.value = v; else acc.push({ date, value: v });
       return acc;
     }, [] as { date: string; value: number }[]);
 
-  // Données pour le graphique des performances par titre
-  const performanceByStock = positions
-    .filter(p => p.gainLoss !== undefined)
-    .map(p => ({
-      name: p.code,
-      gainLoss: p.gainLoss || 0,
-      percent: p.gainLossPercent || 0,
-    }))
-    .sort((a, b) => b.gainLoss - a.gainLoss)
-    .slice(0, 10);
-
-  // Statistiques des dividendes
   const dividendsByMonth = filteredTransactions
     .filter(t => t.type === "dividende")
     .reduce((acc, t) => {
-      const month = new Date(t.date).toLocaleDateString('fr-FR', { 
-        month: 'short', 
-        year: 'numeric' 
-      });
-      const amount = (t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0);
-      
-      const existing = acc.find(item => item.month === month);
-      if (existing) {
-        existing.amount += amount;
-      } else {
-        acc.push({ month, amount });
-      }
-      
+      const month = new Date(t.date).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+      const amount = t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0);
+      const ex = acc.find(i => i.month === month);
+      if (ex) ex.amount += amount; else acc.push({ month, amount });
       return acc;
     }, [] as { month: string; amount: number }[])
     .sort((a, b) => {
-      const [monthA, yearA] = a.month.split(' ');
-      const [monthB, yearB] = b.month.split(' ');
-      return new Date(`${monthA} 1, ${yearA}`).getTime() - new Date(`${monthB} 1, ${yearB}`).getTime();
+      const [mA, yA] = a.month.split(" ");
+      const [mB, yB] = b.month.split(" ");
+      return new Date(`${mA} 1, ${yA}`).getTime() - new Date(`${mB} 1, ${yB}`).getTime();
     });
 
+  const portfolioDistribution = positions
+    .filter(p => (p.totalValue || p.totalCost) > 0)
+    .map(p => ({ name: p.code, value: p.totalValue || p.totalCost, percent: totalValue > 0 ? ((p.totalValue || p.totalCost) / totalValue) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
+
+  const sectorDistribution = positions
+    .filter(p => (p.totalValue || p.totalCost) > 0)
+    .reduce((acc, p) => {
+      const sector = p.sector || "Non défini";
+      const val = p.totalValue || p.totalCost;
+      const ex = acc.find(i => i.sector === sector);
+      if (ex) ex.value += val; else acc.push({ sector, value: val });
+      return acc;
+    }, [] as { sector: string; value: number }[])
+    .map(i => ({ name: i.sector, value: i.value, percent: totalValue > 0 ? (i.value / totalValue) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
+
+  // ── Calculs stat trading N / N-1 ─────────────────────────────────────────
+  const N   = selectedYear;
+  const N1  = selectedYear - 1;
+  const sN  = calcStats(closedPositions, N);
+  const sN1 = calcStats(closedPositions, N1);
+
+  const cumulN  = cumulByMonth(closedPositions, N);
+  const cumulN1 = cumulByMonth(closedPositions, N1);
+
+  // Pour l'année N en cours : null sur les mois pas encore écoulés
+  const todayMonth = new Date().getMonth(); // 0-based
+  const isCurrentYear = N === new Date().getFullYear();
+
+  const cumulData = MONTH_LABELS.map((month, i) => ({
+    month,
+    [String(N)]:  (isCurrentYear && i > todayMonth) ? null : cumulN[i].value,
+    [String(N1)]: cumulN1[i].value,
+  }));
+
+  // Barres groupées N vs N-1
+  const barData = [
+    { metric: "Trades",         n: sN.totalTrades,  n1: sN1.totalTrades  },
+    { metric: "Gagnants",       n: sN.successful,   n1: sN1.successful   },
+    { metric: "Perdants",       n: sN.failed,       n1: sN1.failed       },
+  ];
+
+  const gainBarData = [
+    { metric: "Gains",          n: sN.gains,        n1: sN1.gains        },
+    { metric: "Pertes",         n: sN.losses,       n1: sN1.losses       },
+    { metric: "Gain moy.",      n: sN.avgGain,      n1: sN1.avgGain      },
+    { metric: "Perte moy.",     n: sN.avgLoss,      n1: sN1.avgLoss      },
+  ];
+
+  // ── Tableau récap ─────────────────────────────────────────────────────────
+  const tableRows = [
+    { label: "Nb trades",         vN: sN.totalTrades,  vN1: sN1.totalTrades,  fmt: (v: number) => String(v),            higherIsBetter: true  },
+    { label: "Trades gagnants",   vN: sN.successful,   vN1: sN1.successful,   fmt: (v: number) => String(v),            higherIsBetter: true  },
+    { label: "Trades perdants",   vN: sN.failed,       vN1: sN1.failed,       fmt: (v: number) => String(v),            higherIsBetter: false },
+    { label: "Taux de réussite",  vN: sN.successRate,  vN1: sN1.successRate,  fmt: (v: number) => `${v.toFixed(1)}%`,   higherIsBetter: true  },
+    { label: "Ratio Gain/Perte",  vN: sN.ratio === Infinity ? 999 : sN.ratio, vN1: sN1.ratio === Infinity ? 999 : sN1.ratio, fmt: (v: number) => v >= 999 ? "∞" : v.toFixed(2), higherIsBetter: true },
+    { label: "Gains totaux",      vN: sN.gains,        vN1: sN1.gains,        fmt: formatCurrency,                      higherIsBetter: true  },
+    { label: "Pertes totales",    vN: sN.losses,       vN1: sN1.losses,       fmt: formatCurrency,                      higherIsBetter: false },
+    { label: "Gains/Pertes net",  vN: sN.gains - sN.losses, vN1: sN1.gains - sN1.losses, fmt: formatCurrency,             higherIsBetter: true  },
+    { label: "Gain moyen",        vN: sN.avgGain,      vN1: sN1.avgGain,      fmt: formatCurrency,                      higherIsBetter: true  },
+    { label: "Perte moyenne",     vN: sN.avgLoss,      vN1: sN1.avgLoss,      fmt: formatCurrency,                      higherIsBetter: false },
+  ];
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "valorisation", label: "📊 Valorisation" },
+    { key: "performance",  label: "📈 Performance"  },
+    { key: "trading",      label: "🎯 Stat Trading"  },
+  ];
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* Barre de filtres de dates */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex gap-3 items-center flex-wrap">
-            <div className="flex gap-2 items-center">
-              <label className="text-sm font-medium">Date de début:</label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            <div className="flex gap-2 items-center">
-              <label className="text-sm font-medium">Date de fin:</label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-40"
-              />
-            </div>
-            {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={resetFilters}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Réinitialiser
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Cartes de statistiques */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Valeur totale</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>
-            <p className="text-xs text-muted-foreground">
-              Investi: {formatCurrency(totalInvested)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gain/Perte latent</CardTitle>
-            {unrealizedGainLoss >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            ) : (
-              <TrendingDown className="h-4 w-4 text-red-600" />
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${unrealizedGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(unrealizedGainLoss)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {unrealizedGainLossPercent >= 0 ? '+' : ''}{unrealizedGainLossPercent.toFixed(2)}%
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gain/Perte réalisé</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${realizedGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(realizedGainLoss)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Positions clôturées
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Dividendes reçus</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(totalDividends)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total cumulé
-            </p>
-          </CardContent>
-        </Card>
+      {/* Onglets */}
+      <div className="flex gap-2 border-b">
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t.key
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Graphiques */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Répartition du portefeuille */}
+      {/* Filtre dates (valorisation + performance) */}
+      {activeTab !== "trading" && (
         <Card>
-          <CardHeader>
-            <CardTitle>Répartition du portefeuille</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {portfolioDistribution.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-            ) : (
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={portfolioDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} (${percent.toFixed(1)}%)`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {portfolioDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                  </PieChart>
-                </ResponsiveContainer>
+          <CardContent className="pt-6">
+            <div className="flex gap-3 items-center flex-wrap">
+              <div className="flex gap-2 items-center">
+                <label className="text-sm font-medium">Date de début :</label>
+                <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Répartition par secteur */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Répartition par secteur</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {sectorDistribution.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-            ) : (
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={sectorDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} (${percent.toFixed(1)}%)`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {sectorDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="flex gap-2 items-center">
+                <label className="text-sm font-medium">Date de fin :</label>
+                <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Performance par titre */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Performance par titre (Top 10)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {performanceByStock.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-            ) : (
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={performanceByStock}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip 
-                      formatter={(value) => formatCurrency(value as number)}
-                      labelFormatter={(label) => `Code: ${label}`}
-                    />
-                    <Bar dataKey="gainLoss" fill="#8884d8">
-                      {performanceByStock.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.gainLoss >= 0 ? '#00C49F' : '#FF8042'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Évolution du capital investi */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Évolution du capital investi</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {portfolioEvolution.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-            ) : (
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={portfolioEvolution}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="#8884d8" 
-                      strokeWidth={2}
-                      name="Capital investi"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Dividendes par mois */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Dividendes reçus par mois</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {dividendsByMonth.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-            ) : (
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dividendsByMonth}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                    <Legend />
-                    <Bar dataKey="amount" fill="#00C49F" name="Dividendes" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Résumé global */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Performance globale</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Gain/Perte Total</p>
-              <p className={`text-2xl font-bold ${totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(totalGainLoss)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {totalGainLossPercent >= 0 ? '+' : ''}{totalGainLossPercent.toFixed(2)}%
-              </p>
+              {hasActiveFilters && (
+                <Button variant="outline" size="sm" onClick={resetFilters}>
+                  <X className="h-4 w-4 mr-1" /> Réinitialiser
+                </Button>
+              )}
             </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Nombre de positions</p>
-              <p className="text-2xl font-bold">{positions.length}</p>
-              <p className="text-xs text-muted-foreground">En cours</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Positions clôturées</p>
-              <p className="text-2xl font-bold">{closedPositions.length}</p>
-              <p className="text-xs text-muted-foreground">Historique</p>
-            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sélecteur d'année (stat trading) */}
+      {activeTab === "trading" && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium">Année de référence :</span>
+          <div className="flex gap-1">
+            {availableYears.map(y => (
+              <button key={y} onClick={() => setSelectedYear(y)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                  selectedYear === y
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}>
+                {y}
+              </button>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
-      {/* Statistiques de trading */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Statistiques de trading</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Transactions réussies</p>
-              <p className="text-2xl font-bold text-green-600">{successfulTrades}</p>
-              <p className="text-xs text-muted-foreground">
-                Gains positifs
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Transactions en échec</p>
-              <p className="text-2xl font-bold text-red-600">{failedTrades}</p>
-              <p className="text-xs text-muted-foreground">
-                Pertes
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Taux de réussite</p>
-              <p className={`text-2xl font-bold ${successRate >= 50 ? 'text-green-600' : 'text-orange-600'}`}>
-                {successRate.toFixed(1)}%
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {successfulTrades}/{totalTrades} trades
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Ratio Gain/Perte</p>
-              <p className={`text-2xl font-bold ${gainLossRatio >= 1 ? 'text-green-600' : 'text-orange-600'}`}>
-                {gainLossRatio === Infinity ? '∞' : gainLossRatio.toFixed(2)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {formatCurrency(totalGains)} / {formatCurrency(totalLosses)}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Gain moyen</p>
-              <p className="text-2xl font-bold text-green-600">
-                {successfulTrades > 0 ? formatCurrency(totalGains / successfulTrades) : formatCurrency(0)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Par trade gagnant
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Perte moyenne</p>
-              <p className="text-2xl font-bold text-red-600">
-                {failedTrades > 0 ? formatCurrency(totalLosses / failedTrades) : formatCurrency(0)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Par trade perdant
-              </p>
-            </div>
+      {/* ═══ ONGLET 1 — VALORISATION ═══════════════════════════════════════ */}
+      {activeTab === "valorisation" && (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Valeur totale</CardTitle>
+                <Wallet className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(totalPortfolio)}</div>
+                <p className="text-xs text-muted-foreground">Investi : {formatCurrency(totalInvested)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Gain/Perte latent</CardTitle>
+                {unrealizedGainLoss >= 0 ? <TrendingUp className="h-4 w-4 text-green-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${unrealizedGainLoss >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(unrealizedGainLoss)}</div>
+                <p className="text-xs text-muted-foreground">{unrealizedGainLossPercent >= 0 ? "+" : ""}{unrealizedGainLossPercent.toFixed(2)}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Gain/Perte réalisé</CardTitle>
+                <Activity className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${realizedGainLoss >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(realizedGainLoss)}</div>
+                <p className="text-xs text-muted-foreground">Positions clôturées</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Dividendes reçus</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{formatCurrency(totalDividends)}</div>
+                <p className="text-xs text-muted-foreground">Total cumulé</p>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader><CardTitle>Répartition du portefeuille</CardTitle></CardHeader>
+              <CardContent>
+                {portfolioDistribution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={portfolioDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name} (${percent.toFixed(1)}%)`} outerRadius={80} dataKey="value">
+                          {portfolioDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>Répartition par secteur</CardTitle></CardHeader>
+              <CardContent>
+                {sectorDistribution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={sectorDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name} (${percent.toFixed(1)}%)`} outerRadius={80} dataKey="value">
+                          {sectorDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>Évolution du capital investi</CardTitle></CardHeader>
+              <CardContent>
+                {portfolioEvolution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={portfolioEvolution}>
+                        <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis />
+                        <Tooltip formatter={(v) => formatCurrency(v as number)} /><Legend />
+                        <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={2} name="Capital investi" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>Dividendes reçus par mois</CardTitle></CardHeader>
+              <CardContent>
+                {dividendsByMonth.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dividendsByMonth}>
+                        <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis />
+                        <Tooltip formatter={(v) => formatCurrency(v as number)} /><Legend />
+                        <Bar dataKey="amount" fill="#00C49F" name="Dividendes" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ONGLET 2 — PERFORMANCE ════════════════════════════════════════ */}
+      {activeTab === "performance" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle>Performance globale</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Gain/Perte Total</p>
+                  <p className={`text-2xl font-bold ${totalGainLoss >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(totalGainLoss)}</p>
+                  <p className="text-xs text-muted-foreground">{totalGainLossPercent >= 0 ? "+" : ""}{totalGainLossPercent.toFixed(2)}%</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Nombre de positions</p>
+                  <p className="text-2xl font-bold">{positions.length}</p>
+                  <p className="text-xs text-muted-foreground">En cours</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Positions clôturées</p>
+                  <p className="text-2xl font-bold">{closedPositions.length}</p>
+                  <p className="text-xs text-muted-foreground">Historique</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Performance par titre (Top 10)</CardTitle></CardHeader>
+            <CardContent>
+              {performanceByStock.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                <div className="h-[350px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={performanceByStock}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis />
+                      <Tooltip formatter={(v) => formatCurrency(v as number)} labelFormatter={(l) => `Code: ${l}`} />
+                      <Bar dataKey="gainLoss" fill="#8884d8">
+                        {performanceByStock.map((e, i) => <Cell key={i} fill={e.gainLoss >= 0 ? "#00C49F" : "#FF8042"} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ═══ ONGLET 3 — STAT TRADING N / N-1 ══════════════════════════════ */}
+      {activeTab === "trading" && (
+        <div className="space-y-6">
+
+          {/* KPI avec delta */}
+          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+            {[
+              { label: "Nb trades",        vN: sN.totalTrades,  vN1: sN1.totalTrades,  fmt: (v: number) => String(v),          hib: true  },
+              { label: "Taux de réussite", vN: sN.successRate,  vN1: sN1.successRate,  fmt: (v: number) => `${v.toFixed(1)}%`, hib: true  },
+              { label: "Ratio G/P",        vN: sN.ratio === Infinity ? 999 : sN.ratio, vN1: sN1.ratio === Infinity ? 999 : sN1.ratio, fmt: (v: number) => v >= 999 ? "∞" : v.toFixed(2), hib: true },
+              { label: "Gain moyen",       vN: sN.avgGain,      vN1: sN1.avgGain,      fmt: formatCurrency,                    hib: true  },
+              { label: "Perte moyenne",    vN: sN.avgLoss,      vN1: sN1.avgLoss,      fmt: formatCurrency,                    hib: false },
+            ].map(({ label, vN, vN1, fmt, hib }) => {
+              const delta = vN - vN1;
+              return (
+                <Card key={label}>
+                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium">{label}</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-bold">{fmt(vN)}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-muted-foreground">N-1 : {fmt(vN1)}</span>
+                      {vN1 !== 0 && <DeltaBadge val={delta} higherIsBetter={hib} fmt={fmt} />}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Tableau récapitulatif */}
+          <Card>
+            <CardHeader><CardTitle>Récapitulatif {N} vs {N1}</CardTitle></CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 font-medium text-muted-foreground">Métrique</th>
+                      <th className="text-right py-2 font-medium text-muted-foreground">{N1}</th>
+                      <th className="text-right py-2 font-medium text-muted-foreground">{N}</th>
+                      <th className="text-right py-2 font-medium text-muted-foreground">Évolution</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map(({ label, vN, vN1, fmt, higherIsBetter }) => {
+                      const delta = vN - vN1;
+                      return (
+                        <tr key={label} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="py-2 font-medium">{label}</td>
+                          <td className="text-right py-2 text-muted-foreground">{fmt(vN1)}</td>
+                          <td className="text-right py-2 font-semibold">{fmt(vN)}</td>
+                          <td className="text-right py-2">
+                            {vN1 !== 0
+                              ? <DeltaBadge val={delta} higherIsBetter={higherIsBetter} fmt={fmt} />
+                              : <span className="text-xs text-muted-foreground">—</span>
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Graphiques côte à côte */}
+          <div className="grid gap-4 md:grid-cols-2">
+
+            {/* Barres groupées — nombre de trades */}
+            <Card>
+              <CardHeader><CardTitle>Trades {N} vs {N1}</CardTitle></CardHeader>
+              <CardContent>
+                {sN.totalTrades === 0 && sN1.totalTrades === 0
+                  ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
+                  : <div className="h-[280px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={barData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="metric" />
+                          <YAxis allowDecimals={false} />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="n1" name={String(N1)} fill="#94a3b8" radius={[4,4,0,0]} />
+                          <Bar dataKey="n"  name={String(N)}  fill="#0088FE" radius={[4,4,0,0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                }
+              </CardContent>
+            </Card>
+
+            {/* Barres groupées — gains / pertes */}
+            <Card>
+              <CardHeader><CardTitle>Gains & Pertes {N} vs {N1}</CardTitle></CardHeader>
+              <CardContent>
+                {sN.gains === 0 && sN1.gains === 0
+                  ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
+                  : <div className="h-[280px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={gainBarData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="metric" />
+                          <YAxis />
+                          <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                          <Legend />
+                          <Bar dataKey="n1" name={String(N1)} fill="#94a3b8" radius={[4,4,0,0]} />
+                          <Bar dataKey="n"  name={String(N)}  fill="#00C49F" radius={[4,4,0,0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                }
+              </CardContent>
+            </Card>
+
+            {/* Courbes cumulées mensuelles N vs N-1 */}
+            <Card className="md:col-span-2">
+              <CardHeader><CardTitle>Gains/Pertes cumulés mois par mois — {N} vs {N1}</CardTitle></CardHeader>
+              <CardContent>
+                {sN.totalTrades === 0 && sN1.totalTrades === 0
+                  ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
+                  : <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={cumulData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" />
+                          <YAxis />
+                          <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                          <Legend />
+                          <Line type="monotone" dataKey={String(N1)} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls={false} />
+                          <Line type="monotone" dataKey={String(N)}  stroke="#0088FE" strokeWidth={2} dot={false} connectNulls={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                }
+              </CardContent>
+            </Card>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

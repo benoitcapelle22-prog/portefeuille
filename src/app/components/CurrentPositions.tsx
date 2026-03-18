@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
@@ -51,6 +51,9 @@ export interface Position {
   sector?: string;
 }
 
+// Alias pour compatibilité Dashboard (gainLoss / gainLossPercent)
+export type { Position as PositionWithGainLoss };
+
 type SortKey =
   | "code"
   | "name"
@@ -77,6 +80,8 @@ interface CurrentPositionsProps {
   onUpdateStopLoss?: (code: string, stopLoss: number | undefined) => void;
   onUpdateCurrentPrice?: (code: string, manualCurrentPrice: number | undefined) => void;
   portfolioId?: string;
+  // ← NOUVEAU : callback pour remonter le total portefeuille valorisé au contexte
+  onTotalPortfolioChange?: (total: number) => void;
 }
 
 function PriceInput({
@@ -126,6 +131,7 @@ export function CurrentPositions({
   onUpdateStopLoss,
   onUpdateCurrentPrice,
   portfolioId,
+  onTotalPortfolioChange, // ← NOUVEAU
 }: CurrentPositionsProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -258,6 +264,11 @@ export function CurrentPositions({
   const totalPortfolio = totalValue + cash;
   const totalPortfolioInEUR = portfolioCurrency === "USD" ? totalPortfolio * getConversionRate("USD") : totalPortfolio;
 
+  // ← NOUVEAU : remonter totalPortfolio au contexte dès qu'il change
+  useEffect(() => {
+    onTotalPortfolioChange?.(totalPortfolio);
+  }, [totalPortfolio]);
+
   const totalRisk =
     portfolioCategory === "Trading"
       ? filteredPositions.reduce((sum, pos) => (pos.stopLoss !== undefined ? sum + (pos.stopLoss - pos.pru) * pos.quantity : sum), 0)
@@ -276,10 +287,8 @@ export function CurrentPositions({
 
   const hasPortfolioCodeColumn = positionsWithPrices.some((p) => p.portfolioCode);
 
-  // Colspan : colonnes fixes = code, nom, qté, PRU, cours actuel, montant entrée, valeur actuelle, latent, actions = 9
-  // + portefeuille, secteur, devise si affichés
   const prefixColSpan =
-    6
+    5  // Code, Nom, Quantité, PRU, Cours actuel
     + (hasPortfolioCodeColumn ? 1 : 0)
     + (showSector ? 1 : 0)
     + (showCurrency ? 1 : 0);
@@ -406,25 +415,25 @@ export function CurrentPositions({
                       {showCurrency && <TableCell className="text-center">{positionCurrency}</TableCell>}
                       <TableCell className="text-right">{position.quantity}</TableCell>
                       <TableCell className="text-right">
-  {new Intl.NumberFormat("fr-FR", { 
-    style: "currency", 
-    currency: portfolioCurrency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4
-  }).format(position.pru)}
-</TableCell>
+                        {new Intl.NumberFormat("fr-FR", {
+                          style: "currency",
+                          currency: portfolioCurrency,
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 4
+                        }).format(position.pru)}
+                      </TableCell>
 
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-0.5">
                           <PriceInput
-  value={position.manualCurrentPrice ?? position.currentPrice ?? undefined}
-  onChange={(value) => onUpdateCurrentPrice?.(position.code, value)}
-/>
-{hasLivePrice && (
-  <span className="text-[10px] text-muted-foreground tabular-nums">
-    live
-  </span>
-)}
+                            value={position.manualCurrentPrice ?? position.currentPrice ?? undefined}
+                            onChange={(value) => onUpdateCurrentPrice?.(position.code, value)}
+                          />
+                          {hasLivePrice && (
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              live
+                            </span>
+                          )}
                         </div>
                       </TableCell>
 
@@ -634,13 +643,14 @@ export function CurrentPositions({
                 {portfolioCategory === "Trading" && (
                   <TableRow className="font-bold bg-red-50 dark:bg-red-950/20">
                     <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
-                    <TableCell className="text-right"></TableCell>
+                    <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
+                    <TableCell className="text-right"></TableCell>{/* Valeur actuelle */}
+                    <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
+                    <TableCell className="text-right"></TableCell>{/* Stop Loss */}
                     <TableCell className="text-right text-sm text-red-700 dark:text-red-400">
                       {formatCurrency(totalRisk, portfolioCurrency)}
-                    </TableCell>
-                    <TableCell className="text-right"></TableCell>
-                    <TableCell className="text-right"></TableCell>
-                    <TableCell></TableCell>
+                    </TableCell>{/* Risque */}
+                    <TableCell></TableCell>{/* Actions */}
                   </TableRow>
                 )}
               </tfoot>
