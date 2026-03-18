@@ -21,6 +21,28 @@ type SortKey =
 
 type SortDir = "asc" | "desc" | null;
 
+type TransactionType = Transaction["type"];
+
+const ALL_TYPES: TransactionType[] = ["achat", "vente", "dividende", "depot", "retrait"];
+
+const TYPE_LABELS: Record<TransactionType, string> = {
+  achat:     "Achat",
+  vente:     "Vente",
+  dividende: "Dividende",
+  depot:     "Dépôt",
+  retrait:   "Retrait",
+};
+
+const TYPE_STYLES: Record<TransactionType, string> = {
+  achat:     "bg-primary text-primary-foreground hover:bg-primary/90",
+  vente:     "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  dividende: "bg-green-600 text-white hover:bg-green-700",
+  depot:     "bg-blue-600 text-white hover:bg-blue-700",
+  retrait:   "bg-orange-600 text-white hover:bg-orange-700",
+};
+
+const TYPE_STYLES_INACTIVE = "bg-muted text-muted-foreground hover:bg-muted/80";
+
 const PAGE_SIZE = 10;
 
 export function TransactionHistory({
@@ -32,6 +54,7 @@ export function TransactionHistory({
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [typeFilter, setTypeFilter] = useState<Set<TransactionType>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [editOpen, setEditOpen] = useState(false);
@@ -41,7 +64,7 @@ export function TransactionHistory({
   // Reset page quand les filtres ou le tri changent
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchFilter, startDate, endDate, sortKey, sortDir]);
+  }, [searchFilter, startDate, endDate, typeFilter, sortKey, sortDir]);
 
   const formatCurrency = (value: number, currency?: string) => {
     return new Intl.NumberFormat("fr-FR", {
@@ -67,6 +90,14 @@ export function TransactionHistory({
     }
   };
 
+  const toggleType = (type: TransactionType) => {
+    setTypeFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type); else next.add(type);
+      return next;
+    });
+  };
+
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortKey !== col) return <ChevronsUpDown className="inline h-3 w-3 ml-1 opacity-30" />;
     if (sortDir === "asc") return <ChevronUp className="inline h-3 w-3 ml-1 text-primary" />;
@@ -80,6 +111,12 @@ export function TransactionHistory({
     [transactions]
   );
 
+  // Types présents dans les transactions
+  const presentTypes = useMemo(
+    () => new Set(transactions.map(t => t.type as TransactionType)),
+    [transactions]
+  );
+
   const filteredTransactions = transactions.filter(transaction => {
     const searchLower = searchFilter.toLowerCase();
     const matchesSearch = searchFilter === "" ||
@@ -88,7 +125,8 @@ export function TransactionHistory({
     const transDate = new Date(transaction.date);
     const matchesStartDate = !startDate || transDate >= new Date(startDate);
     const matchesEndDate = !endDate || transDate <= new Date(endDate);
-    return matchesSearch && matchesStartDate && matchesEndDate;
+    const matchesType = typeFilter.size === 0 || typeFilter.has(transaction.type as TransactionType);
+    return matchesSearch && matchesStartDate && matchesEndDate && matchesType;
   });
 
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
@@ -119,17 +157,22 @@ export function TransactionHistory({
     safePage * PAGE_SIZE
   );
 
-  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
-  const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); };
+  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "" || typeFilter.size > 0;
+  const resetFilters = () => {
+    setSearchFilter("");
+    setStartDate("");
+    setEndDate("");
+    setTypeFilter(new Set());
+  };
 
   const getTypeBadge = (type: Transaction["type"]) => {
     switch (type) {
-      case "achat": return <Badge variant="default">Achat</Badge>;
-      case "vente": return <Badge variant="destructive">Vente</Badge>;
+      case "achat":     return <Badge variant="default">Achat</Badge>;
+      case "vente":     return <Badge variant="destructive">Vente</Badge>;
       case "dividende": return <Badge className="bg-green-600">Dividende</Badge>;
-      case "depot": return <Badge className="bg-blue-600">Dépôt</Badge>;
-      case "retrait": return <Badge className="bg-orange-600">Retrait</Badge>;
-      default: return <Badge>{type}</Badge>;
+      case "depot":     return <Badge className="bg-blue-600">Dépôt</Badge>;
+      case "retrait":   return <Badge className="bg-orange-600">Retrait</Badge>;
+      default:          return <Badge>{type}</Badge>;
     }
   };
 
@@ -166,6 +209,7 @@ export function TransactionHistory({
           <p className="text-muted-foreground text-center py-8">Aucun mouvement enregistré</p>
         ) : (
           <div className="space-y-4">
+            {/* Ligne 1 : recherche + dates */}
             <div className="flex gap-3 items-center flex-wrap">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -189,6 +233,35 @@ export function TransactionHistory({
               )}
             </div>
 
+            {/* Ligne 2 : filtres par type */}
+            <div className="flex gap-2 items-center flex-wrap">
+              <span className="text-sm text-muted-foreground">Type :</span>
+              {ALL_TYPES.filter(t => presentTypes.has(t)).map(type => {
+                const active = typeFilter.has(type);
+                return (
+                  <button
+                    key={type}
+                    onClick={() => toggleType(type)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                      active
+                        ? `${TYPE_STYLES[type]} border-transparent`
+                        : "border-border bg-background text-muted-foreground hover:border-muted-foreground"
+                    }`}
+                  >
+                    {TYPE_LABELS[type]}
+                    {active && (
+                      <span className="ml-1 opacity-70">×</span>
+                    )}
+                  </button>
+                );
+              })}
+              {typeFilter.size > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {filteredTransactions.length} résultat{filteredTransactions.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -208,44 +281,52 @@ export function TransactionHistory({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedTransactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      {hasPortfolioCodeColumn && (
-                        <TableCell className="font-medium">{transaction.portfolioCode || "-"}</TableCell>
-                      )}
-                      <TableCell>{formatDate(transaction.date)}</TableCell>
-                      <TableCell className="font-medium">{transaction.code}</TableCell>
-                      <TableCell>{transaction.name}</TableCell>
-                      <TableCell>{getTypeBadge(transaction.type)}</TableCell>
-                      <TableCell className="text-right">{transaction.quantity}</TableCell>
-                      <TableCell className="text-right">
-                        {new Intl.NumberFormat("fr-FR", {
-                          style: "currency",
-                          currency: transaction.currency || portfolioCurrency,
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 6,
-                        }).format(transaction.unitPrice)}
-                      </TableCell>
-                      <TableCell>{transaction.currency}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(transaction.fees)}</TableCell>
-                      <TableCell className="text-right">{transaction.type === "vente" ? "-" : formatCurrency(transaction.tff)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(getTotal(transaction))}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="inline-flex items-center gap-1">
-                          {onEditTransaction && (
-                            <Button variant="ghost" size="sm" onClick={() => openEdit(transaction)}>
-                              <Pencil className="size-4" />
-                            </Button>
-                          )}
-                          {onDeleteTransaction && (
-                            <Button variant="ghost" size="sm" onClick={() => onDeleteTransaction(transaction.id)}>
-                              <Trash2 className="size-4 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
+                  {paginatedTransactions.length === 0 ? (
+                    <TableRow>
+                      <td colSpan={hasPortfolioCodeColumn ? 13 : 12} className="text-center py-8 text-muted-foreground">
+                        Aucune transaction pour ces filtres
+                      </td>
                     </TableRow>
-                  ))}
+                  ) : (
+                    paginatedTransactions.map((transaction) => (
+                      <TableRow key={transaction.id}>
+                        {hasPortfolioCodeColumn && (
+                          <TableCell className="font-medium">{transaction.portfolioCode || "-"}</TableCell>
+                        )}
+                        <TableCell>{formatDate(transaction.date)}</TableCell>
+                        <TableCell className="font-medium">{transaction.code}</TableCell>
+                        <TableCell>{transaction.name}</TableCell>
+                        <TableCell>{getTypeBadge(transaction.type)}</TableCell>
+                        <TableCell className="text-right">{transaction.quantity}</TableCell>
+                        <TableCell className="text-right">
+                          {new Intl.NumberFormat("fr-FR", {
+                            style: "currency",
+                            currency: transaction.currency || portfolioCurrency,
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 6,
+                          }).format(transaction.unitPrice)}
+                        </TableCell>
+                        <TableCell>{transaction.currency}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(transaction.fees)}</TableCell>
+                        <TableCell className="text-right">{transaction.type === "vente" ? "-" : formatCurrency(transaction.tff)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(getTotal(transaction))}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-1">
+                            {onEditTransaction && (
+                              <Button variant="ghost" size="sm" onClick={() => openEdit(transaction)}>
+                                <Pencil className="size-4" />
+                              </Button>
+                            )}
+                            {onDeleteTransaction && (
+                              <Button variant="ghost" size="sm" onClick={() => onDeleteTransaction(transaction.id)}>
+                                <Trash2 className="size-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -259,24 +340,10 @@ export function TransactionHistory({
                   {" — "}page {safePage} / {totalPages}
                 </p>
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(1)}
-                    disabled={safePage === 1}
-                  >
-                    «
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={safePage === 1}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(1)} disabled={safePage === 1}>«</Button>
+                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-
-                  {/* Numéros de pages */}
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
                     .reduce<(number | "...")[]>((acc, p, idx, arr) => {
@@ -288,34 +355,14 @@ export function TransactionHistory({
                       p === "..." ? (
                         <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground text-sm">…</span>
                       ) : (
-                        <Button
-                          key={p}
-                          variant={safePage === p ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(p as number)}
-                          className="w-8"
-                        >
-                          {p}
-                        </Button>
+                        <Button key={p} variant={safePage === p ? "default" : "outline"} size="sm"
+                          onClick={() => setCurrentPage(p as number)} className="w-8">{p}</Button>
                       )
                     )}
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={safePage === totalPages}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
                     <ChevronRight className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={safePage === totalPages}
-                  >
-                    »
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setCurrentPage(totalPages)} disabled={safePage === totalPages}>»</Button>
                 </div>
               </div>
             )}
