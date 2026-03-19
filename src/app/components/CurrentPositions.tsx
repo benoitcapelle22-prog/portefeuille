@@ -215,18 +215,84 @@ export function CurrentPositions({
     return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   };
 
-  const filteredPositions = positionsWithPrices.filter((position) => {
+  // Recalcul des positions en fonction du filtre de date :
+  // Si une date est sélectionnée, on rejoue toutes les transactions achat/vente
+  // jusqu'à cette date pour recalculer quantité, totalCost et PRU.
+  const recomputedPositions: Position[] = useMemo(() => {
+    if (!endDate || !transactions || transactions.length === 0) {
+      return positionsWithPrices;
+    }
+
+    const cutoff = new Date(endDate);
+    cutoff.setHours(23, 59, 59, 999);
+
+    // Rejouer les transactions achat/vente jusqu'à la date cutoff
+    const posMap: Record<string, { quantity: number; totalCost: number; pru: number }> = {};
+
+    const sorted = [...transactions]
+      .filter(t => t.type === "achat" || t.type === "vente")
+      .filter(t => new Date(t.date) <= cutoff)
+      .sort((a, b) => {
+        const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (diff !== 0) return diff;
+        if (a.type === "achat" && b.type === "vente") return -1;
+        if (a.type === "vente" && b.type === "achat") return 1;
+        return 0;
+      });
+
+    for (const tx of sorted) {
+      const code = (tx.code || "").trim().toUpperCase();
+      const convertedPrice = tx.unitPrice * (tx.conversionRate || 1);
+
+      if (tx.type === "achat") {
+        const cost = tx.quantity * convertedPrice + (tx.fees || 0) + (tx.tff || 0);
+        if (posMap[code]) {
+          const newTotal = posMap[code].totalCost + cost;
+          const newQty = posMap[code].quantity + tx.quantity;
+          posMap[code] = { quantity: newQty, totalCost: newTotal, pru: newTotal / newQty };
+        } else {
+          posMap[code] = { quantity: tx.quantity, totalCost: cost, pru: cost / tx.quantity };
+        }
+      } else if (tx.type === "vente") {
+        if (!posMap[code] || posMap[code].quantity < tx.quantity) continue;
+        const newQty = posMap[code].quantity - tx.quantity;
+        const removedCost = tx.quantity * posMap[code].pru;
+        if (newQty === 0) {
+          delete posMap[code];
+        } else {
+          posMap[code] = { quantity: newQty, totalCost: posMap[code].totalCost - removedCost, pru: posMap[code].pru };
+        }
+      }
+    }
+
+    // Reconstruire les positions en fusionnant avec les données existantes (cours, stopLoss, etc.)
+    return Object.entries(posMap).map(([code, calc]) => {
+      const existing = positionsWithPrices.find(p => (p.code || "").trim().toUpperCase() === code);
+      const base: Position = existing
+        ? { ...existing, quantity: calc.quantity, totalCost: calc.totalCost, pru: calc.pru }
+        : { code, name: code, quantity: calc.quantity, totalCost: calc.totalCost, pru: calc.pru };
+
+      // Recalculer totalValue et latentGainLoss avec le nouveau totalCost
+      if (base.currentPrice !== undefined && Number.isFinite(base.currentPrice)) {
+        const totalValue = base.quantity * base.currentPrice;
+        return {
+          ...base,
+          totalValue,
+          latentGainLoss: totalValue - calc.totalCost,
+          latentGainLossPercent: calc.totalCost > 0 ? ((totalValue - calc.totalCost) / calc.totalCost) * 100 : 0,
+        };
+      }
+      return { ...base, totalValue: undefined, latentGainLoss: undefined, latentGainLossPercent: undefined };
+    });
+  }, [endDate, transactions, positionsWithPrices]);
+
+  const filteredPositions = recomputedPositions.filter((position) => {
     const searchLower = searchFilter.toLowerCase();
-    const matchesSearch =
+    return (
       searchFilter === "" ||
       position.code.toLowerCase().includes(searchLower) ||
-      position.name.toLowerCase().includes(searchLower);
-    let matchesDateRange = true;
-    if (transactions && endDate) {
-      const purchases = transactions.filter((t) => t.type === "achat" && t.code === position.code);
-      if (purchases.length > 0) matchesDateRange = purchases.some((p) => new Date(p.date) <= new Date(endDate));
-    }
-    return matchesSearch && matchesDateRange;
+      position.name.toLowerCase().includes(searchLower)
+    );
   });
 
   const getRisk = (pos: Position) => (pos.stopLoss !== undefined ? (pos.stopLoss - pos.pru) * pos.quantity : undefined);

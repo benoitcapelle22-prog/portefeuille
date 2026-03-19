@@ -1,10 +1,15 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { Dashboard } from "../components/Dashboard";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { useQuotes } from "../hooks/useQuotes";
 
 export function DashboardPage() {
-  const { currentData, currentPortfolio, portfolios, currentPortfolioId } = usePortfolio();
+  const { currentData, currentPortfolio, portfolios, currentPortfolioId, refreshData } = usePortfolio();
+
+  // Refresh au montage de la page et à chaque changement de portefeuille
+  useEffect(() => {
+    refreshData();
+  }, [currentPortfolioId]);
 
   // Calculer le total des liquidités (consolidé ou individuel)
   const totalCash = currentPortfolioId === "ALL"
@@ -40,7 +45,6 @@ export function DashboardPage() {
   }, [currentData.positions, quotesBySymbol]);
 
   // totalPortfolio = valeur actuelle des positions (cours live) + liquidités
-  // Identique à la ligne "TOTAL PORTEFEUILLE" de l'onglet Positions en cours
   const totalPortfolio = useMemo(() => {
     const totalValue = positionsWithPrices.reduce((sum, p) => sum + (p.totalValue || 0), 0);
     return totalValue + totalCash;

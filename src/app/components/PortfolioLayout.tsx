@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
+import { useState, useEffect, useRef, createContext, useContext, useCallback, useMemo } from "react";
 import { Outlet, Link, useLocation } from "react-router";
 import { PortfolioSelector, Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
@@ -73,7 +73,6 @@ export interface PortfolioContextType {
   setDialogOpen: (open: boolean) => void;
   dialogInitialData: any;
   refreshData: () => Promise<void>;
-  // ← NOUVEAU : valeur totale du portefeuille (positions valorisées + liquidités)
   totalPortfolio: number;
   setTotalPortfolio: (value: number) => void;
 }
@@ -96,7 +95,6 @@ export function PortfolioLayout() {
   const [isLoading, setIsLoading] = useState(true);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
-  // ← NOUVEAU
   const [totalPortfolio, setTotalPortfolio] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -291,6 +289,7 @@ export function PortfolioLayout() {
   const setCurrentPortfolioId = async (id: string) => {
     setCurrentPortfolioIdState(id);
     await saveCurrentPortfolioId(id);
+    await refreshData(); // ← accolade fermante présente
   };
 
   const handleCreatePortfolio = async (portfolio: Omit<Portfolio, "id">) => {
@@ -320,7 +319,7 @@ export function PortfolioLayout() {
   // DONNÉES COURANTES
   // ============================================================
 
-  const currentData: PortfolioData = (() => {
+  const currentData: PortfolioData = useMemo(() => {
     if (!currentPortfolioId) return { transactions: [], positions: [], closedPositions: [] };
     if (currentPortfolioId === "ALL") {
       const allTx: Transaction[] = [];
@@ -337,7 +336,7 @@ export function PortfolioLayout() {
       return { transactions: allTx, positions: allPos, closedPositions: allClosed };
     }
     return portfolioData[currentPortfolioId] ?? { transactions: [], positions: [], closedPositions: [] };
-  })();
+  }, [currentPortfolioId, portfolioData, portfolios]);
 
   const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
 
@@ -696,7 +695,6 @@ export function PortfolioLayout() {
     setDialogOpen,
     dialogInitialData,
     refreshData,
-    // ← NOUVEAU
     totalPortfolio,
     setTotalPortfolio,
   };

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { TransactionForm } from "../components/TransactionForm";
 import { CurrentPositions } from "../components/CurrentPositions";
@@ -21,7 +22,19 @@ export function TransactionsPage() {
     handleUpdateCurrentPrice,
     portfolios,
     currentPortfolioId,
+    refreshData,
   } = usePortfolio();
+
+  // Onglet contrôlé : reset à "mouvements" à chaque changement de portefeuille
+  const [activeTab, setActiveTab] = useState("mouvements");
+  useEffect(() => {
+    setActiveTab("mouvements");
+  }, [currentPortfolioId]);
+
+  // Refresh des données à chaque montage de la page et changement de portefeuille
+  useEffect(() => {
+    refreshData();
+  }, [currentPortfolioId]);
 
   const isConsolidatedView = currentPortfolioId === "ALL";
   const displayCurrency = isConsolidatedView ? "EUR" : currentPortfolio?.currency;
@@ -33,7 +46,7 @@ export function TransactionsPage() {
     : (currentPortfolio?.cash || 0);
 
   return (
-    <Tabs defaultValue="mouvements" className="w-full">
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
       <TabsList className="grid w-full grid-cols-5">
         <TabsTrigger value="mouvements">Mouvements</TabsTrigger>
         <TabsTrigger value="positions">Positions en cours</TabsTrigger>
