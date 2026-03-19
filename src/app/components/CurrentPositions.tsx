@@ -287,8 +287,10 @@ export function CurrentPositions({
 
   const hasPortfolioCodeColumn = positionsWithPrices.some((p) => p.portfolioCode);
 
+  // prefixColSpan = colonnes avant "Montant d'entrée" dans le footer
+  // Ordre : [Portefeuille?] Code, Nom, [Secteur?], [Devise?], Quantité, PRU → puis Montant d'entrée
   const prefixColSpan =
-    5  // Code, Nom, Quantité, PRU, Cours actuel
+    4  // Code, Nom, Quantité, PRU
     + (hasPortfolioCodeColumn ? 1 : 0)
     + (showSector ? 1 : 0)
     + (showCurrency ? 1 : 0);
@@ -368,10 +370,10 @@ export function CurrentPositions({
                   {showCurrency && <Th col="currency" className="text-center">Devise</Th>}
                   <Th col="quantity" className="text-right">Quantité</Th>
                   <Th col="pru" className="text-right">PRU ({portfolioCurrency})</Th>
-                  <Th col="currentPrice" className="text-right w-32">Cours actuel</Th>
                   <Th col="totalCost" className="text-right w-20">
                     <span className="leading-tight">Montant<br />d'entrée</span>
                   </Th>
+                  <Th col="currentPrice" className="text-right w-32">Cours actuel</Th>
                   <Th col="totalValue" className="text-right">Valeur actuelle</Th>
                   <Th col="latentGainLoss" className="text-right w-20">
                     <span className="leading-tight">+/- Value<br />latente</span>
@@ -423,6 +425,10 @@ export function CurrentPositions({
                         }).format(position.pru)}
                       </TableCell>
 
+                      {/* Montant d'entrée — avant Cours actuel */}
+                      <TableCell className="text-right">{formatCurrency(position.totalCost, portfolioCurrency)}</TableCell>
+
+                      {/* Cours actuel */}
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-0.5">
                           <PriceInput
@@ -437,7 +443,6 @@ export function CurrentPositions({
                         </div>
                       </TableCell>
 
-                      <TableCell className="text-right">{formatCurrency(position.totalCost, portfolioCurrency)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(position.totalValue, portfolioCurrency)}</TableCell>
 
                       <TableCell className="text-right whitespace-nowrap">
@@ -497,6 +502,7 @@ export function CurrentPositions({
                 <TableRow className="border-t-2 font-bold bg-muted/50">
                   <TableCell colSpan={prefixColSpan}>TOTAL</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalInvested, portfolioCurrency)}</TableCell>
+                  <TableCell className="text-right"></TableCell>{/* Cours actuel */}
                   <TableCell className="text-right">{formatCurrency(totalValue, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <div className={totalLatentGainLoss >= 0 ? "text-green-600" : "text-red-600"}>
@@ -591,7 +597,8 @@ export function CurrentPositions({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-medium">-</TableCell>
+                  <TableCell className="text-right font-medium">-</TableCell>{/* Montant d'entrée */}
+                  <TableCell className="text-right font-medium">-</TableCell>{/* Cours actuel */}
                   <TableCell className="text-right font-medium text-blue-600">{formatCurrency(cash, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right">-</TableCell>
                   {portfolioCategory === "Trading" && (
@@ -606,7 +613,8 @@ export function CurrentPositions({
                 {/* TOTAL PORTEFEUILLE */}
                 <TableRow className="border-t-2 font-bold bg-green-50 dark:bg-green-950/20">
                   <TableCell colSpan={prefixColSpan} className="text-lg">TOTAL PORTEFEUILLE</TableCell>
-                  <TableCell className="text-right"></TableCell>
+                  <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
+                  <TableCell className="text-right"></TableCell>{/* Cours actuel */}
                   <TableCell className="text-right text-lg text-green-600">{formatCurrency(totalPortfolio, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right"></TableCell>
                   {portfolioCategory === "Trading" && (
@@ -624,7 +632,8 @@ export function CurrentPositions({
                     <TableCell colSpan={prefixColSpan} className="text-sm italic">
                       TOTAL PORTEFEUILLE EN EUR (taux: {rates["USD"]?.toFixed(4)})
                     </TableCell>
-                    <TableCell className="text-right"></TableCell>
+                    <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
+                    <TableCell className="text-right"></TableCell>{/* Cours actuel */}
                     <TableCell className="text-right text-sm text-amber-700 dark:text-amber-400">
                       {formatCurrency(totalPortfolioInEUR, "EUR")}
                     </TableCell>
@@ -644,6 +653,7 @@ export function CurrentPositions({
                   <TableRow className="font-bold bg-red-50 dark:bg-red-950/20">
                     <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
                     <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
+                    <TableCell className="text-right"></TableCell>{/* Cours actuel (vide) */}
                     <TableCell className="text-right"></TableCell>{/* Valeur actuelle */}
                     <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
                     <TableCell className="text-right"></TableCell>{/* Stop Loss */}
