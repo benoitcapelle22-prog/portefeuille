@@ -151,11 +151,30 @@ export async function deletePortfolio(id: string): Promise<void> {
 // ============================================================
 
 export async function getTransactions(portfolioId?: string): Promise<DBTransaction[]> {
-  let query = supabase.from('transactions').select('*').order('date');
-  if (portfolioId) query = query.eq('portfolio_id', portfolioId);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []).map(mapTransaction);
+  const PAGE_SIZE = 1000;
+  let allRows: any[] = [];
+  let from = 0;
+
+  while (true) {
+    let query = supabase
+      .from('transactions')
+      .select('*')
+      .order('date')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (portfolioId) query = query.eq('portfolio_id', portfolioId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    allRows = allRows.concat(data ?? []);
+
+    if (!data || data.length < PAGE_SIZE) break;
+
+    from += PAGE_SIZE;
+  }
+
+  return allRows.map(mapTransaction);
 }
 
 export async function addTransaction(tx: DBTransaction): Promise<void> {
@@ -275,7 +294,7 @@ export async function deletePosition(portfolioId: string, code: string): Promise
 // ============================================================
 
 export async function getClosedPositions(portfolioId?: string): Promise<DBClosedPosition[]> {
-  let query = supabase.from('closed_positions').select('*').order('sale_date');
+  let query = supabase.from('closed_positions').select('*').order('sale_date').limit(100000);
   if (portfolioId) query = query.eq('portfolio_id', portfolioId);
   const { data, error } = await query;
   if (error) throw error;
@@ -355,7 +374,7 @@ export async function setCurrentPortfolioId(portfolioId: string): Promise<void> 
 }
 
 export async function getAllSettings(): Promise<Setting[]> {
-  const { data, error } = await supabase.from('settings').select('*');
+  const { data, error } = await supabase.from('settings').select('*').limit(100000);
   if (error) throw error;
   return data ?? [];
 }

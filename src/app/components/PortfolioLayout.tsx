@@ -111,6 +111,7 @@ export function PortfolioLayout() {
         getClosedPositions(),
       ]);
 
+
       setPortfolios(allPortfolios);
 
       const data: Record<string, PortfolioData> = {};
