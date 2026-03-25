@@ -73,6 +73,7 @@ export interface PortfolioContextType {
   setDialogOpen: (open: boolean) => void;
   dialogInitialData: any;
   refreshData: () => Promise<void>;
+  recalcCashFromDB: (portfolioId: string) => Promise<void>;
   totalPortfolio: number;
   setTotalPortfolio: (value: number) => void;
 }
@@ -99,6 +100,47 @@ export function PortfolioLayout() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ============================================================
+  // HELPER : parse date DD/MM/YYYY ou YYYY-MM-DD
+  // ============================================================
+
+  const parseDate = (d: string): number => {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) {
+      const [day, month, year] = d.split('/');
+      return new Date(`${year}-${month}-${day}`).getTime();
+    }
+    return new Date(d).getTime();
+  };
+
+  // ============================================================
+  // HELPER : recalcul du cash depuis zéro à partir des transactions
+  //   depot     → + unitPrice  (montant brut en devise portefeuille)
+  //   retrait   → - unitPrice
+  //   achat     → - (qté × prix × taux + frais + tff)
+  //   vente     → + (qté × prix × taux - frais - tff)
+  //   dividende → + (qté × prix × taux - taxe)
+  // ============================================================
+
+  const recalcCash = (transactions: Transaction[]): number => {
+    return transactions.reduce((cash, t) => {
+      const converted = t.unitPrice * (t.conversionRate || 1);
+      switch (t.type) {
+        case "depot":
+          return cash + t.unitPrice;
+        case "retrait":
+          return cash - t.unitPrice;
+        case "achat":
+          return cash - (t.quantity * converted + (t.fees || 0) + (t.tff || 0));
+        case "vente":
+          return cash + (t.quantity * converted - (t.fees || 0) - (t.tff || 0));
+        case "dividende":
+          return cash + (t.quantity * converted - ((t as any).tax || 0));
+        default:
+          return cash;
+      }
+    }, 0);
+  };
+
+  // ============================================================
   // CHARGEMENT DES DONNÉES
   // ============================================================
 
@@ -110,7 +152,6 @@ export function PortfolioLayout() {
         getPositions(),
         getClosedPositions(),
       ]);
-
 
       setPortfolios(allPortfolios);
 
@@ -290,7 +331,7 @@ export function PortfolioLayout() {
   const setCurrentPortfolioId = async (id: string) => {
     setCurrentPortfolioIdState(id);
     await saveCurrentPortfolioId(id);
-    await refreshData(); // ← accolade fermante présente
+    await refreshData();
   };
 
   const handleCreatePortfolio = async (portfolio: Omit<Portfolio, "id">) => {
@@ -475,29 +516,20 @@ export function PortfolioLayout() {
       }
     }
 
+    // Recalcul du cash depuis toutes les transactions (existantes + importées)
+
     await deleteTransactionsByPortfolio(targetPortfolioId);
     await deletePositionsByPortfolio(targetPortfolioId);
     await deleteClosedPositionsByPortfolio(targetPortfolioId);
     await bulkAddTransactions(allTx);
     await bulkUpsertPositions(positions);
     await bulkAddClosedPositions(closedPositions);
+    await dbUpdatePortfolio(targetPortfolioId, { cash: newCash });
     await refreshData();
   };
 
   // ============================================================
-  // HELPER : parse date DD/MM/YYYY ou YYYY-MM-DD
-  // ============================================================
-
-  const parseDate = (d: string): number => {
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) {
-      const [day, month, year] = d.split('/');
-      return new Date(`${year}-${month}-${day}`).getTime();
-    }
-    return new Date(d).getTime();
-  };
-
-  // ============================================================
-  // DELETE TRANSACTION (recalcul complet)
+  // DELETE TRANSACTION (recalcul complet positions + cash)
   // ============================================================
 
   const handleDeleteTransaction = async (id: string) => {
@@ -549,15 +581,19 @@ export function PortfolioLayout() {
         }
       });
 
+    // Recalcul du cash depuis toutes les transactions restantes
+    const newCash = recalcCash(updatedTransactions);
+
     await deletePositionsByPortfolio(currentPortfolioId);
     await deleteClosedPositionsByPortfolio(currentPortfolioId);
     await bulkUpsertPositions(newPositions);
     await bulkAddClosedPositions(newClosedPositions);
+    await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
     await refreshData();
   };
 
   // ============================================================
-  // EDIT TRANSACTION (recalcul complet)
+  // EDIT TRANSACTION (recalcul complet positions + cash)
   // ============================================================
 
   const handleEditTransaction = async (updated: Transaction) => {
@@ -625,10 +661,14 @@ export function PortfolioLayout() {
         }
       });
 
+    // Recalcul du cash depuis toutes les transactions mises à jour
+    const newCash = recalcCash(updatedTransactions);
+
     await deletePositionsByPortfolio(currentPortfolioId);
     await deleteClosedPositionsByPortfolio(currentPortfolioId);
     await bulkUpsertPositions(newPositions);
     await bulkAddClosedPositions(newClosedPositions);
+    await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
     await refreshData();
   };
 
@@ -643,9 +683,23 @@ export function PortfolioLayout() {
 
   const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal", date: string) => {
     if (!currentPortfolioId || !currentPortfolio) return;
-    const newCash = type === "deposit" ? (currentPortfolio.cash || 0) + amount : (currentPortfolio.cash || 0) - amount;
-    if (newCash < 0) { alert("Erreur: Le solde ne peut pas être négatif"); return; }
-    const newTransaction: DBTransaction = { id: crypto.randomUUID(), portfolioId: currentPortfolioId, date, code: "CASH", name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités", type: type === "deposit" ? "depot" : "retrait", quantity: 1, unitPrice: amount, fees: 0, tff: 0, currency: currentPortfolio.currency, conversionRate: 1 };
+    const newCash = type === "deposit"
+      ? (currentPortfolio.cash || 0) + amount
+      : (currentPortfolio.cash || 0) - amount;
+    const newTransaction: DBTransaction = {
+      id: crypto.randomUUID(),
+      portfolioId: currentPortfolioId,
+      date,
+      code: "CASH",
+      name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités",
+      type: type === "deposit" ? "depot" : "retrait",
+      quantity: 1,
+      unitPrice: amount,
+      fees: 0,
+      tff: 0,
+      currency: currentPortfolio.currency,
+      conversionRate: 1,
+    };
     await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
     await dbAddTransaction(newTransaction);
     await refreshData();
@@ -670,6 +724,26 @@ export function PortfolioLayout() {
     }
     await refreshData();
   };
+
+  // Recalcule le cash depuis Supabase pour un portefeuille donné
+const recalcCashFromDB = async (portfolioId: string) => {
+  const txs = await getTransactions(portfolioId);
+  console.log("nb txs:", txs.length);
+  console.log("première tx:", txs[0]);
+  const newCash = txs.reduce((cash, t) => {
+    const converted = t.unitPrice * (t.conversionRate || 1);
+    switch (t.type) {
+      case "depot":     return cash + t.unitPrice;
+      case "retrait":   return cash - t.unitPrice;
+      case "achat":     return cash - (t.quantity * converted + (t.fees || 0) + (t.tff || 0));
+      case "vente":     return cash + (t.quantity * converted - (t.fees || 0) - (t.tff || 0));
+      case "dividende": return cash + (t.quantity * converted - ((t as any).tax || 0));
+      default:          return cash;
+    }
+  }, 0);
+  console.log("newCash calculé:", newCash);
+  await dbUpdatePortfolio(portfolioId, { cash: newCash });
+};
 
   // ============================================================
   // CONTEXT
@@ -696,6 +770,7 @@ export function PortfolioLayout() {
     setDialogOpen,
     dialogInitialData,
     refreshData,
+    recalcCashFromDB,
     totalPortfolio,
     setTotalPortfolio,
   };
