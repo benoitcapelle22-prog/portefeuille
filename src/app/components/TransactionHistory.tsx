@@ -4,9 +4,10 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Trash2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { Trash2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight, FileDown } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { EditTransactionDialog, type TransactionRow } from "./EditTransactionDialog";
+import * as XLSX from "xlsx";
 
 interface TransactionHistoryProps {
   transactions: Transaction[];
@@ -41,8 +42,6 @@ const TYPE_STYLES: Record<TransactionType, string> = {
   retrait:   "bg-orange-600 text-white hover:bg-orange-700",
 };
 
-const TYPE_STYLES_INACTIVE = "bg-muted text-muted-foreground hover:bg-muted/80";
-
 const PAGE_SIZE = 10;
 
 export function TransactionHistory({
@@ -61,7 +60,6 @@ export function TransactionHistory({
   const [editing, setEditing] = useState<TransactionRow | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset page quand les filtres ou le tri changent
   useEffect(() => {
     setCurrentPage(1);
   }, [searchFilter, startDate, endDate, typeFilter, sortKey, sortDir]);
@@ -111,7 +109,6 @@ export function TransactionHistory({
     [transactions]
   );
 
-  // Types présents dans les transactions
   const presentTypes = useMemo(
     () => new Set(transactions.map(t => t.type as TransactionType)),
     [transactions]
@@ -165,6 +162,47 @@ export function TransactionHistory({
     setTypeFilter(new Set());
   };
 
+  // ── Export Excel ─────────────────────────────────────────────
+  const handleExportExcel = () => {
+    const rows = sortedTransactions.map(t => ({
+      ...(hasPortfolioCodeColumn ? { Portefeuille: t.portfolioCode || "" } : {}),
+      Date: formatDate(t.date),
+      Code: t.code,
+      Nom: t.name,
+      Type: TYPE_LABELS[t.type as TransactionType] ?? t.type,
+      Quantité: t.quantity,
+      "Prix unitaire": t.unitPrice,
+      Devise: t.currency,
+      "Taux de change": t.conversionRate,
+      Frais: t.fees,
+      TFF: t.type === "vente" ? 0 : t.tff,
+      Total: getTotal(t),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    ws["!cols"] = [
+      ...(hasPortfolioCodeColumn ? [{ wch: 15 }] : []),
+      { wch: 12 }, // Date
+      { wch: 12 }, // Code
+      { wch: 30 }, // Nom
+      { wch: 12 }, // Type
+      { wch: 10 }, // Quantité
+      { wch: 14 }, // Prix unitaire
+      { wch: 8 },  // Devise
+      { wch: 14 }, // Taux de change
+      { wch: 10 }, // Frais
+      { wch: 10 }, // TFF
+      { wch: 14 }, // Total
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Historique");
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `historique_transactions_${dateStr}.xlsx`);
+  };
+
   const getTypeBadge = (type: Transaction["type"]) => {
     switch (type) {
       case "achat":     return <Badge variant="default">Achat</Badge>;
@@ -209,7 +247,7 @@ export function TransactionHistory({
           <p className="text-muted-foreground text-center py-8">Aucun mouvement enregistré</p>
         ) : (
           <div className="space-y-4">
-            {/* Ligne 1 : recherche + dates */}
+            {/* Ligne 1 : recherche + dates + export */}
             <div className="flex gap-3 items-center flex-wrap">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -231,6 +269,9 @@ export function TransactionHistory({
                   <X className="h-4 w-4 mr-1" />Réinitialiser
                 </Button>
               )}
+              <Button variant="outline" size="sm" onClick={handleExportExcel} className="ml-auto">
+                <FileDown className="h-4 w-4 mr-1" />Exporter Excel
+              </Button>
             </div>
 
             {/* Ligne 2 : filtres par type */}
@@ -249,9 +290,7 @@ export function TransactionHistory({
                     }`}
                   >
                     {TYPE_LABELS[type]}
-                    {active && (
-                      <span className="ml-1 opacity-70">×</span>
-                    )}
+                    {active && <span className="ml-1 opacity-70">×</span>}
                   </button>
                 );
               })}
