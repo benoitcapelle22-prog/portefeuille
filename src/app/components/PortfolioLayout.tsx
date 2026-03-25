@@ -676,10 +676,16 @@ export function PortfolioLayout() {
   // ACTIONS POSITIONS
   // ============================================================
 
-  const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => {
-    setDialogInitialData({ code: position.code, name: position.name, type: action, quantity: action === 'vente' ? position.quantity : undefined, portfolioId });
-    setDialogOpen(true);
-  };
+const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => {
+  setDialogInitialData({ 
+    code: position.code, 
+    name: position.name, 
+    type: action, 
+    quantity: (action === 'vente' || action === 'dividende') ? position.quantity : undefined,
+    portfolioId 
+  });
+  setDialogOpen(true);
+};
 
   const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal", date: string) => {
     if (!currentPortfolioId || !currentPortfolio) return;
