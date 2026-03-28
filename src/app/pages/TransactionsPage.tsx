@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { TransactionForm } from "../components/TransactionForm";
 import { CurrentPositions } from "../components/CurrentPositions";
 import { ClosedPositions } from "../components/ClosedPositions";
 import { TransactionHistory } from "../components/TransactionHistory";
@@ -8,13 +7,12 @@ import { DividendsHistory } from "../components/DividendsHistory";
 import { ImportTransactions } from "../components/ImportTransactions";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { Button } from "../components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Plus } from "lucide-react";
 
 export function TransactionsPage() {
   const {
     currentData,
     currentPortfolio,
-    handleAddTransaction,
     handleImportTransactions,
     handleDeleteTransaction,
     handleEditTransaction,
@@ -26,14 +24,15 @@ export function TransactionsPage() {
     currentPortfolioId,
     refreshData,
     recalcCashFromDB,
+    setDialogOpen,
   } = usePortfolio();
 
   const [recalcLoading, setRecalcLoading] = useState(false);
 
-  // Onglet contrôlé : reset à "mouvements" à chaque changement de portefeuille
-  const [activeTab, setActiveTab] = useState("mouvements");
+  // Onglet contrôlé : reset à "positions" à chaque changement de portefeuille
+  const [activeTab, setActiveTab] = useState("positions");
   useEffect(() => {
-    setActiveTab("mouvements");
+    setActiveTab("positions");
   }, [currentPortfolioId]);
 
   // Refresh des données à chaque montage de la page et changement de portefeuille
@@ -69,15 +68,14 @@ export function TransactionsPage() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-5">
-        <TabsTrigger value="mouvements">Mouvements</TabsTrigger>
+      <TabsList className="grid w-full grid-cols-4">
         <TabsTrigger value="positions">Positions en cours</TabsTrigger>
         <TabsTrigger value="cloturees">Positions clôturées</TabsTrigger>
         <TabsTrigger value="dividendes">Dividendes</TabsTrigger>
         <TabsTrigger value="historique">Historique</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="mouvements" className="space-y-4">
+      <TabsContent value="positions">
         <div className="flex justify-end gap-2 mb-4">
           <Button
             variant="outline"
@@ -90,15 +88,14 @@ export function TransactionsPage() {
             Recalculer les liquidités
           </Button>
           <ImportTransactions onImportTransactions={handleImportTransactions} />
+          <Button
+            size="sm"
+            onClick={() => setDialogOpen(true)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Nouveau mouvement
+          </Button>
         </div>
-        <TransactionForm
-          onAddTransaction={handleAddTransaction}
-          currentPortfolio={currentPortfolio}
-          portfolios={portfolios}
-        />
-      </TabsContent>
-
-      <TabsContent value="positions">
         <CurrentPositions
           positions={currentData.positions}
           portfolioCurrency={displayCurrency}
