@@ -213,7 +213,7 @@ export function DividendDialog({
 
           {/* ── IDENTIFICATION ──────────────────────────────────── */}
           <SectionTitle>Identification</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="div-date" className="text-xs">Date</Label>
               <Input id="div-date" type="date" value={date}
@@ -235,7 +235,7 @@ export function DividendDialog({
 
           {/* ── TRANSACTION ─────────────────────────────────────── */}
           <SectionTitle>Transaction</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="div-qty" className="text-xs">Nombre d'actions</Label>
               <Input id="div-qty" type="number" step="0.01" placeholder="0" value={quantity}

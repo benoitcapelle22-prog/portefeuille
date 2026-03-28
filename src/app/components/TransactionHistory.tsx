@@ -305,8 +305,8 @@ export function TransactionHistory({
         ) : (
           <div className="space-y-4">
             {/* Ligne 1 : recherche + dates + export */}
-            <div className="flex gap-3 items-center flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
+            <div className="flex gap-2 items-center flex-wrap">
+              <div className="relative flex-1 min-w-0 w-full sm:w-auto">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="text"

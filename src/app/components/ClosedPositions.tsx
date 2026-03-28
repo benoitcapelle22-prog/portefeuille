@@ -109,8 +109,8 @@ function ByOperationView({ closedPositions, portfolioCurrency }: { closedPositio
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-3 items-center flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex gap-2 items-center flex-wrap">
+        <div className="relative flex-1 min-w-0 w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input type="text" placeholder="Rechercher par code ou nom..." value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)} className="pl-9" />
@@ -327,8 +327,8 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-3 items-center flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex gap-2 items-center flex-wrap">
+        <div className="relative flex-1 min-w-0 w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input type="text" placeholder="Rechercher par code ou nom..." value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)} className="pl-9" />

@@ -365,7 +365,7 @@ export function Dashboard({
               <CardHeader><CardTitle>Répartition du portefeuille</CardTitle></CardHeader>
               <CardContent>
                 {portfolioDistribution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
-                  <div className="h-[300px]">
+                  <div className="h-[220px] sm:h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={portfolioDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name} (${percent.toFixed(1)}%)`} outerRadius={80} dataKey="value">
@@ -382,7 +382,7 @@ export function Dashboard({
               <CardHeader><CardTitle>Répartition par secteur</CardTitle></CardHeader>
               <CardContent>
                 {sectorDistribution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
-                  <div className="h-[300px]">
+                  <div className="h-[220px] sm:h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={sectorDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name} (${percent.toFixed(1)}%)`} outerRadius={80} dataKey="value">
@@ -399,7 +399,7 @@ export function Dashboard({
               <CardHeader><CardTitle>Évolution du capital investi</CardTitle></CardHeader>
               <CardContent>
                 {portfolioEvolution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
-                  <div className="h-[300px]">
+                  <div className="h-[220px] sm:h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={portfolioEvolution}>
                         <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis />
@@ -415,7 +415,7 @@ export function Dashboard({
               <CardHeader><CardTitle>Dividendes reçus par mois</CardTitle></CardHeader>
               <CardContent>
                 {dividendsByMonth.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
-                  <div className="h-[300px]">
+                  <div className="h-[220px] sm:h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={dividendsByMonth}>
                         <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis />
@@ -460,7 +460,7 @@ export function Dashboard({
             <CardHeader><CardTitle>Performance par titre (Top 10)</CardTitle></CardHeader>
             <CardContent>
               {performanceByStock.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
-                <div className="h-[350px]">
+                <div className="h-[240px] sm:h-[350px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={performanceByStock}>
                       <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis />
@@ -552,7 +552,7 @@ export function Dashboard({
               <CardContent>
                 {sN.totalTrades === 0 && sN1.totalTrades === 0
                   ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-                  : <div className="h-[280px]">
+                  : <div className="h-[200px] sm:h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={barData}>
                           <CartesianGrid strokeDasharray="3 3" />
@@ -575,7 +575,7 @@ export function Dashboard({
               <CardContent>
                 {sN.gains === 0 && sN1.gains === 0
                   ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-                  : <div className="h-[280px]">
+                  : <div className="h-[200px] sm:h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={gainBarData}>
                           <CartesianGrid strokeDasharray="3 3" />
@@ -598,7 +598,7 @@ export function Dashboard({
               <CardContent>
                 {sN.totalTrades === 0 && sN1.totalTrades === 0
                   ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p>
-                  : <div className="h-[300px]">
+                  : <div className="h-[220px] sm:h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={cumulData}>
                           <CartesianGrid strokeDasharray="3 3" />

@@ -141,7 +141,7 @@ export function PositionSizeCalculator() {
                 <div className="h-12 flex items-center justify-end font-bold text-lg text-cyan-600 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-900 rounded-md border-2 border-cyan-300 dark:border-cyan-700 px-3 flex-1">
                   {formatPercent(result.finalRisk)}
                 </div>
-                <div className="flex flex-col items-end justify-center bg-cyan-200 dark:bg-cyan-800 rounded-md px-4 font-bold min-w-[120px]">
+                <div className="flex flex-col items-end justify-center bg-cyan-200 dark:bg-cyan-800 rounded-md px-4 font-bold">
                   <div className="text-xs text-gray-600 dark:text-gray-300 font-normal">Risque en montant</div>
                   <div className="text-base">{formatCurrency(result.riskAmount)}</div>
                 </div>
@@ -149,7 +149,7 @@ export function PositionSizeCalculator() {
             </div>
 
             {/* Prix d'achat et STOP */}
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-4 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-4 items-end">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Prix d'achat</Label>
                 <Input
@@ -176,7 +176,7 @@ export function PositionSizeCalculator() {
             </div>
 
             {/* Résultats principaux */}
-            <div className="grid grid-cols-3 gap-4 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 rounded-lg border-2 border-blue-200 dark:border-blue-800">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 rounded-lg border-2 border-blue-200 dark:border-blue-800">
               <div className="text-center">
                 <div className="text-sm text-muted-foreground mb-1">Nombre actions maxi</div>
                 <div className="text-3xl font-bold text-primary">{result.maxShares}</div>
@@ -195,7 +195,7 @@ export function PositionSizeCalculator() {
             </div>
 
             {/* Plage déclenchement APD */}
-            <div className="grid grid-cols-3 gap-4 p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border-2 border-yellow-200 dark:border-yellow-800">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border-2 border-yellow-200 dark:border-yellow-800">
               <div>
                 <div className="text-xs text-muted-foreground">Taille plage déclenchement</div>
                 <div className="text-lg font-bold text-yellow-700 dark:text-yellow-400">{formatPercent(result.triggerRange)}</div>
@@ -238,7 +238,7 @@ export function PositionSizeCalculator() {
             {/* Profil de risque */}
             <div className="space-y-3">
               <Label className="text-sm font-semibold">Profil de risque</Label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <button
                   onClick={() => {
                     setRiskProfile("speculatif");
@@ -291,7 +291,7 @@ export function PositionSizeCalculator() {
             </div>
 
             {/* Risque de base et Risque final */}
-            <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50 rounded-lg border-2 border-emerald-200 dark:border-emerald-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50 rounded-lg border-2 border-emerald-200 dark:border-emerald-800">
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Risque de base</div>
                 <div className="relative">

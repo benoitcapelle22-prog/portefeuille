@@ -181,8 +181,8 @@ export function PortfolioSelector({
   };
 
   return (
-    <div className="flex items-center gap-3 flex-wrap">
-      <div className="flex-1 min-w-[200px]">
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex-1 min-w-0 w-full sm:w-auto">
         <Label htmlFor="portfolio-select" className="sr-only">
           Sélectionner un portefeuille
         </Label>
@@ -241,7 +241,7 @@ export function PortfolioSelector({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="create-category">Catégorie</Label>
                 <Select
@@ -284,7 +284,7 @@ export function PortfolioSelector({
 
             <div className="space-y-3">
               <Label>Frais par défaut</Label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="create-fees" className="text-sm text-muted-foreground">
                     Frais (%)
@@ -350,7 +350,7 @@ export function PortfolioSelector({
                 <Wallet className="size-4" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="w-[85vw] max-w-[1400px] max-h-[90vh] overflow-y-auto">
+            <DialogContent className="w-[95vw] max-w-[1400px] max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Liste des portefeuilles</DialogTitle>
                 <DialogDescription>
@@ -449,7 +449,7 @@ export function PortfolioSelector({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-category">Catégorie</Label>
                     <Select
@@ -492,7 +492,7 @@ export function PortfolioSelector({
 
                 <div className="space-y-3">
                   <Label>Frais par défaut</Label>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="edit-fees" className="text-sm text-muted-foreground">
                         Frais (%)

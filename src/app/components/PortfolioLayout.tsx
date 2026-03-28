@@ -915,11 +915,11 @@ const recalcCashFromDB = async (portfolioId: string) => {
 
   return (
     <PortfolioContext.Provider value={contextValue}>
-      <div className="min-h-screen bg-background p-8">
-        <div className="max-w-7xl mx-auto space-y-6">
+      <div className="min-h-screen bg-background p-3 sm:p-6 md:p-8">
+        <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
           <div className="flex items-center gap-3">
-            <TrendingUp className="size-8 text-primary" />
-            <h1 className="text-3xl">Suivi de Portefeuille Boursier</h1>
+            <TrendingUp className="size-6 sm:size-8 text-primary shrink-0" />
+            <h1 className="text-lg sm:text-2xl md:text-3xl leading-tight">Suivi de Portefeuille Boursier</h1>
           </div>
 
           <PortfolioSelector
@@ -931,11 +931,11 @@ const recalcCashFromDB = async (portfolioId: string) => {
             onSelectPortfolio={setCurrentPortfolioId}
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
-            <div className="flex flex-wrap gap-2">
-              <Link to="/"><Button variant={location.pathname === "/" ? "default" : "ghost"} className="gap-2"><LayoutDashboard className="h-4 w-4" />Tableau de bord</Button></Link>
-              <Link to="/transactions"><Button variant={location.pathname === "/transactions" ? "default" : "ghost"} className="gap-2"><Receipt className="h-4 w-4" />Transactions</Button></Link>
-              <Link to="/calculator"><Button variant={location.pathname === "/calculator" ? "default" : "ghost"} className="gap-2"><Calculator className="h-4 w-4" />Calculatrice</Button></Link>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+            <div className="flex flex-wrap gap-1 sm:gap-2">
+              <Link to="/"><Button variant={location.pathname === "/" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden xs:inline">Tableau de bord</span><span className="xs:hidden">Bord</span></Button></Link>
+              <Link to="/transactions"><Button variant={location.pathname === "/transactions" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Receipt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />Transactions</Button></Link>
+              <Link to="/calculator"><Button variant={location.pathname === "/calculator" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Calculatrice</span><span className="sm:hidden">Calc.</span></Button></Link>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

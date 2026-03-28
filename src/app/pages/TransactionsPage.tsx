@@ -47,11 +47,11 @@ export function TransactionsPage() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-4">
-        <TabsTrigger value="positions">Positions en cours</TabsTrigger>
-        <TabsTrigger value="cloturees">Positions clôturées</TabsTrigger>
-        <TabsTrigger value="dividendes">Dividendes</TabsTrigger>
-        <TabsTrigger value="historique">Historique</TabsTrigger>
+      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+        <TabsTrigger value="positions" className="text-xs sm:text-sm py-2">Positions en cours</TabsTrigger>
+        <TabsTrigger value="cloturees" className="text-xs sm:text-sm py-2">Pos. clôturées</TabsTrigger>
+        <TabsTrigger value="dividendes" className="text-xs sm:text-sm py-2">Dividendes</TabsTrigger>
+        <TabsTrigger value="historique" className="text-xs sm:text-sm py-2">Historique</TabsTrigger>
       </TabsList>
 
       <TabsContent value="positions">

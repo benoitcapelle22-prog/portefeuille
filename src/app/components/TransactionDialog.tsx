@@ -317,7 +317,7 @@ export function TransactionDialog({
 
           {/* ── IDENTIFICATION ──────────────────────────────────── */}
           <SectionTitle>Identification</SectionTitle>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
             <div className="space-y-1">
               <Label htmlFor="date" className="text-xs">Date</Label>
@@ -338,7 +338,7 @@ export function TransactionDialog({
                 onChange={e => { setName(e.target.value); nameTouchedRef.current = true; }} required className="h-8 text-sm" />
             </div>
 
-            <div className="space-y-1 col-span-4">
+            <div className="space-y-1 col-span-2 sm:col-span-4">
               <Label htmlFor="sector" className="text-xs">Secteur</Label>
               <Select value={sector} onValueChange={setSector}>
                 <SelectTrigger id="sector" className="h-8 text-sm"><SelectValue placeholder="Sélectionner…" /></SelectTrigger>
@@ -352,7 +352,7 @@ export function TransactionDialog({
 
           {/* ── TRANSACTION ─────────────────────────────────────── */}
           <SectionTitle>Transaction</SectionTitle>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
             <div className="space-y-1">
               <Label htmlFor="type" className="text-xs">Type</Label>
@@ -396,7 +396,7 @@ export function TransactionDialog({
             </div>
 
             {isForeignCurrency && (
-              <div className="space-y-1 col-span-4">
+              <div className="space-y-1 col-span-2 sm:col-span-4">
                 <Label htmlFor="conversionRate" className="text-xs">
                   Taux de change — 1 {portfolioCurrency} = ? {currency}
                 </Label>
@@ -410,7 +410,7 @@ export function TransactionDialog({
 
           {/* ── FRAIS ───────────────────────────────────────────── */}
           <SectionTitle>Frais</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
             <div className="space-y-1">
               <Label htmlFor="fees" className="text-xs">Frais ({portSymbol})</Label>
@@ -448,7 +448,7 @@ export function TransactionDialog({
           </div>
 
           {/* ── RÉCAPITULATIF ───────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
 
             {/* Gauche : détail montants */}
             <div className="space-y-1 text-sm">
