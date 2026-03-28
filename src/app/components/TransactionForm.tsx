@@ -78,10 +78,14 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
 
-  // Cours + Nom via /api/ticker
-  const price: number | null = tickerRes?.price ?? null;
-  const fetchedName: string | null = tickerRes?.name ?? null;
+  // Nom : priorité ticker, fallback yahoo-search
+  const fetchedName: string | null = tickerRes?.name ?? stockRes?.name ?? null;
 
+  // Secteur
+  const fetchedSector: string | null = stockRes?.sector ?? null;
+
+  // Cours (peut être null le week-end)
+  const price: number | null = tickerRes?.price ?? null;
   if (price != null) {
     setLivePrice(price);
     setQuoteStatus("found");
@@ -91,6 +95,7 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     setQuoteStatus("not_found");
   }
 
+  // Nom — indépendant du cours
   if (fetchedName && !nameTouchedRef.current) {
     if (!name || nameAuto) {
       setName(fetchedName);
@@ -98,8 +103,8 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     }
   }
 
-  // Secteur via /api/yahoo-search
-  if (!sector && stockRes?.sector) setSector(stockRes.sector);
+  // Secteur — indépendant du cours
+  if (!sector && fetchedSector) setSector(fetchedSector);
 }, 900);
 
     return () => {

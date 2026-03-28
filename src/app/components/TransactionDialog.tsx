@@ -8,18 +8,51 @@ import { Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
 import { Loader2 } from "lucide-react";
 
-const SECTORS = ["Finance", "Technology", "Santé", "Énergie", "Industrie"];
+const SECTORS = ["Finance", "Technology", "Santé", "Énergie", "Industrie", "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre"];
 
 // Correspondance noms Yahoo Finance → valeurs du menu déroulant
 const SECTOR_MAP: Record<string, string> = {
-  "Technology":          "Technology",
-  "Financial Services":  "Finance",
-  "Finance":             "Finance",
-  "Healthcare":          "Santé",
-  "Health Care":         "Santé",
-  "Energy":              "Énergie",
-  "Industrials":         "Industrie",
-  "Industrial":          "Industrie",
+  // Technology
+  "Technology":                "Technology",
+  "Information Technology":    "Technology",
+  // Finance
+  "Financial Services":        "Finance",
+  "Finance":                   "Finance",
+  "Banking":                   "Finance",
+  "Insurance":                 "Finance",
+  // Santé
+  "Healthcare":                "Santé",
+  "Health Care":               "Santé",
+  "Biotechnology":             "Santé",
+  "Pharmaceuticals":           "Santé",
+  // Énergie
+  "Energy":                    "Énergie",
+  "Oil & Gas":                 "Énergie",
+  // Industrie
+  "Industrials":               "Industrie",
+  "Industrial":                "Industrie",
+  "Aerospace & Defense":       "Industrie",
+  "Manufacturing":             "Industrie",
+  // Consommation
+  "Consumer Cyclical":         "Consommation",
+  "Consumer Defensive":        "Consommation",
+  "Consumer Staples":          "Consommation",
+  "Consumer Discretionary":    "Consommation",
+  "Retail":                    "Consommation",
+  // Immobilier
+  "Real Estate":               "Immobilier",
+  // Matériaux
+  "Basic Materials":           "Matériaux",
+  "Materials":                 "Matériaux",
+  "Chemicals":                 "Matériaux",
+  "Mining":                    "Matériaux",
+  // Services publics
+  "Utilities":                 "Services publics",
+  // Télécommunications
+  "Communication Services":    "Télécommunications",
+  "Telecommunications":        "Télécommunications",
+  "Telecom":                   "Télécommunications",
+  "Media":                     "Télécommunications",
 };
 
 interface TransactionDialogProps {
