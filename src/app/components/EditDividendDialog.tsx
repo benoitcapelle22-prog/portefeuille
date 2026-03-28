@@ -3,7 +3,10 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { supabase } from "../supabase";
+import { Transaction } from "./TransactionForm";
+import { Portfolio } from "./PortfolioSelector";
 
 export type DividendRow = {
   id: string;
@@ -19,28 +22,46 @@ export type DividendRow = {
   portfolioCode?: string;
 };
 
+type BlankDividend = Omit<DividendRow, "id">;
+
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   dividend: DividendRow | null;
-  onSaved: (updated: DividendRow) => void;
+  onSaved?: (updated: DividendRow) => void;
+  // Mode création
+  onCreate?: (div: Omit<Transaction, "id">, portfolioId?: string) => void;
+  portfolios?: Portfolio[];
+  currentPortfolioId?: string;
+  initialCode?: string;
+  initialName?: string;
 };
 
-export function EditDividendDialog({ open, onOpenChange, dividend, onSaved }: Props) {
+const BLANK: BlankDividend = {
+  date: new Date().toISOString().split("T")[0],
+  code: "", name: "", type: "dividende",
+  quantity: 0, unitPrice: 0,
+  currency: "EUR", conversionRate: 1, tax: 0,
+};
+
+export function EditDividendDialog({ open, onOpenChange, dividend, onSaved, onCreate, portfolios, currentPortfolioId, initialCode, initialName }: Props) {
+  const isCreateMode = dividend === null && !!onCreate;
   const initial = useMemo(() => dividend, [dividend]);
-  const [form, setForm] = useState<DividendRow | null>(dividend);
+  const [form, setForm] = useState<BlankDividend | DividendRow>(dividend ?? { ...BLANK });
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(currentPortfolioId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm(dividend);
-    setError(null);
-  }, [dividend]);
+    if (open) {
+      setForm(dividend ?? { ...BLANK, code: initialCode ?? "", name: initialName ?? "" });
+      setSelectedPortfolioId(currentPortfolioId);
+      setError(null);
+    }
+  }, [open, dividend, initialCode, initialName, currentPortfolioId]);
 
-  if (!form) return null;
-
-  const set = <K extends keyof DividendRow>(k: K, v: DividendRow[K]) => {
-    setForm(prev => (prev ? { ...prev, [k]: v } : prev));
+  const set = <K extends keyof BlankDividend>(k: K, v: BlankDividend[K]) => {
+    setForm(prev => ({ ...prev, [k]: v }));
   };
 
   const gross = (Number(form.unitPrice) || 0) * (Number(form.quantity) || 0);
@@ -48,35 +69,50 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved }: Pr
   const taxConverted = (Number(form.tax) || 0) * (Number(form.conversionRate) || 1);
   const netConverted = grossConverted - taxConverted;
 
-  const changed = JSON.stringify(form) !== JSON.stringify(initial);
+  const changed = isCreateMode || JSON.stringify(form) !== JSON.stringify(initial);
 
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      const patch = {
-        date: form.date,
-        code: form.code.trim().toUpperCase(),
-        name: form.name,
-        type: "dividende",
-        quantity: Number(form.quantity) || 0,
-        unitPrice: Number(form.unitPrice) || 0,
-        currency: form.currency,
-        conversionRate: Number(form.conversionRate) || 1,
-        tax: form.tax ?? 0,
-      };
+      if (isCreateMode) {
+        onCreate!({
+          date: form.date,
+          code: form.code.trim().toUpperCase(),
+          name: form.name,
+          type: "dividende",
+          quantity: Number(form.quantity) || 0,
+          unitPrice: Number(form.unitPrice) || 0,
+          fees: 0, tff: 0,
+          currency: form.currency,
+          conversionRate: Number(form.conversionRate) || 1,
+          tax: Number(form.tax) || 0,
+        }, selectedPortfolioId);
+        onOpenChange(false);
+      } else {
+        const patch = {
+          date: form.date,
+          code: form.code.trim().toUpperCase(),
+          name: form.name,
+          type: "dividende",
+          quantity: Number(form.quantity) || 0,
+          unit_price: Number(form.unitPrice) || 0,
+          currency: form.currency,
+          conversion_rate: Number(form.conversionRate) || 1,
+          tax: form.tax ?? 0,
+        };
 
-      const { data, error } = await supabase
-        .from("transactions")
-        .update(patch)
-        .eq("id", form.id)
-        .select("*")
-        .single();
+        const { data, error } = await supabase
+          .from("transactions")
+          .update(patch)
+          .eq("id", (form as DividendRow).id)
+          .select("*")
+          .single();
 
-      if (error) throw error;
-
-      onSaved(data as DividendRow);
-      onOpenChange(false);
+        if (error) throw error;
+        onSaved?.(data as DividendRow);
+        onOpenChange(false);
+      }
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally {
@@ -88,10 +124,24 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved }: Pr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Modifier le dividende</DialogTitle>
+          <DialogTitle>{isCreateMode ? "Nouveau dividende" : "Modifier le dividende"}</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {isCreateMode && portfolios && portfolios.length > 1 && (
+            <div className="space-y-1 md:col-span-2">
+              <Label>Portefeuille</Label>
+              <Select value={selectedPortfolioId ?? ""} onValueChange={setSelectedPortfolioId}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un portefeuille" /></SelectTrigger>
+                <SelectContent>
+                  {portfolios.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="space-y-1">
             <Label>Date</Label>
             <Input type="date" value={form.date} onChange={e => set("date", e.target.value)} />
@@ -179,7 +229,7 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved }: Pr
             Annuler
           </Button>
           <Button onClick={save} disabled={saving || !changed}>
-            {saving ? "Enregistrement..." : "Enregistrer"}
+            {saving ? "Enregistrement..." : isCreateMode ? "Ajouter le dividende" : "Enregistrer"}
           </Button>
         </DialogFooter>
       </DialogContent>

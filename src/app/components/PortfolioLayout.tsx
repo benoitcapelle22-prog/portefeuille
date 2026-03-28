@@ -5,6 +5,7 @@ import { Transaction } from "./TransactionForm";
 import { Position } from "./CurrentPositions";
 import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
+import { DividendDialog } from "./DividendDialog";
 import { ImportTransactions } from "./ImportTransactions";
 import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
@@ -95,6 +96,8 @@ export function PortfolioLayout() {
   const [portfolioData, setPortfolioData] = useState<Record<string, PortfolioData>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<any>({});
+  const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
+  const [dividendDialogInitialData, setDividendDialogInitialData] = useState<any>({});
   const [isLoading, setIsLoading] = useState(true);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
@@ -766,14 +769,25 @@ export function PortfolioLayout() {
   // ============================================================
 
 const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => {
-  setDialogInitialData({ 
-    code: position.code, 
-    name: position.name, 
-    type: action, 
-    quantity: (action === 'vente' || action === 'dividende') ? position.quantity : undefined,
-    portfolioId 
-  });
-  setDialogOpen(true);
+  if (action === 'dividende') {
+    setDividendDialogInitialData({
+      code: position.code,
+      name: position.name,
+      type: 'dividende',
+      quantity: position.quantity,
+      portfolioId,
+    });
+    setDividendDialogOpen(true);
+  } else {
+    setDialogInitialData({
+      code: position.code,
+      name: position.name,
+      type: action,
+      quantity: action === 'vente' ? position.quantity : undefined,
+      portfolioId,
+    });
+    setDialogOpen(true);
+  }
 };
 
   const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal", date: string) => {
@@ -976,12 +990,24 @@ const recalcCashFromDB = async (portfolioId: string) => {
           />
 
           <TransactionDialog
-            open={dialogOpen}
+            open={dialogOpen && dialogInitialData?.type !== "dividende"}
             onOpenChange={setDialogOpen}
             onAddTransaction={handleAddTransaction}
             currentPortfolio={currentPortfolio}
             portfolios={portfolios}
             initialData={dialogInitialData}
+          />
+
+          <DividendDialog
+            open={
+              (dialogOpen && dialogInitialData?.type === "dividende") ||
+              dividendDialogOpen
+            }
+            onOpenChange={v => { if (!v) { setDialogOpen(false); setDividendDialogOpen(false); } }}
+            onAddTransaction={handleAddTransaction}
+            currentPortfolio={currentPortfolio}
+            portfolios={portfolios}
+            initialData={dividendDialogOpen ? dividendDialogInitialData : dialogInitialData}
           />
         </div>
       </div>

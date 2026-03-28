@@ -7,6 +7,9 @@ import { Transaction } from "./TransactionForm";
 import { Trash2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight, FileDown } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { EditTransactionDialog, type TransactionRow } from "./EditTransactionDialog";
+import { TransactionDialog } from "./TransactionDialog";
+import { DividendDialog } from "./DividendDialog";
+import { Portfolio } from "./PortfolioSelector";
 import * as XLSX from "xlsx";
 
 interface TransactionHistoryProps {
@@ -14,7 +17,8 @@ interface TransactionHistoryProps {
   onDeleteTransaction?: (id: string) => void;
   onEditTransaction?: (updated: Transaction) => Promise<void>;
   portfolioCurrency?: string;
-  portfolios?: { id: string; name: string; code?: string }[];
+  portfolios?: Portfolio[];
+  currentPortfolio?: Portfolio;
   currentPortfolioId?: string;
 }
 
@@ -52,6 +56,7 @@ export function TransactionHistory({
   onEditTransaction,
   portfolioCurrency = "EUR",
   portfolios,
+  currentPortfolio,
   currentPortfolioId,
 }: TransactionHistoryProps) {
   const [searchFilter, setSearchFilter] = useState("");
@@ -60,6 +65,13 @@ export function TransactionHistory({
   const [typeFilter, setTypeFilter] = useState<Set<TransactionType>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Dialog achat/vente (TransactionDialog)
+  const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [txDialogData, setTxDialogData] = useState<any>(null);
+  // Dialog dividende (DividendDialog)
+  const [dividendOpen, setDividendOpen] = useState(false);
+  const [dividendDialogData, setDividendDialogData] = useState<any>(null);
+  // Dialog dépôt/retrait (EditTransactionDialog)
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<TransactionRow | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -219,23 +231,63 @@ export function TransactionHistory({
   };
 
   const openEdit = (tx: Transaction) => {
-    setEditing({
-      id: tx.id,
-      date: tx.date,
-      code: tx.code,
-      name: tx.name,
-      type: tx.type,
-      quantity: tx.quantity,
-      unitPrice: tx.unitPrice,
-      fees: tx.fees,
-      tff: tx.tff,
-      currency: tx.currency,
-      conversionRate: tx.conversionRate,
-      tax: (tx as any).tax ?? null,
-      sector: (tx as any).sector ?? null,
-      portfolioId: (tx as any).portfolioId ?? currentPortfolioId ?? undefined,
-    });
-    setEditOpen(true);
+    const portfolioId = (tx as any).portfolioId ?? currentPortfolioId ?? undefined;
+
+    if (tx.type === "achat" || tx.type === "vente") {
+      setTxDialogData({
+        editId: tx.id,
+        date: tx.date,
+        code: tx.code,
+        name: tx.name,
+        type: tx.type,
+        quantity: tx.quantity,
+        unitPrice: tx.unitPrice,
+        currency: tx.currency,
+        conversionRate: tx.conversionRate,
+        fees: tx.fees,
+        tff: tx.tff,
+        sector: (tx as any).sector ?? undefined,
+        portfolioId,
+      });
+      setTxDialogOpen(true);
+    } else if (tx.type === "dividende") {
+      setDividendDialogData({
+        editId: tx.id,
+        date: tx.date,
+        code: tx.code,
+        name: tx.name,
+        type: "dividende",
+        quantity: tx.quantity,
+        unitPrice: tx.unitPrice,
+        currency: tx.currency,
+        conversionRate: tx.conversionRate,
+        tax: (tx as any).tax ?? 0,
+        portfolioId,
+      });
+      setDividendOpen(true);
+    } else {
+      setEditing({
+        id: tx.id,
+        date: tx.date,
+        code: tx.code,
+        name: tx.name,
+        type: tx.type,
+        quantity: tx.quantity,
+        unitPrice: tx.unitPrice,
+        fees: tx.fees,
+        tff: tx.tff,
+        currency: tx.currency,
+        conversionRate: tx.conversionRate,
+        tax: (tx as any).tax ?? null,
+        sector: (tx as any).sector ?? null,
+        portfolioId,
+      });
+      setEditOpen(true);
+    }
+  };
+
+  const handleTxDialogEdit = async (updated: Transaction & { portfolioId?: string }) => {
+    if (onEditTransaction) await onEditTransaction(updated as Transaction);
   };
 
   const handleSaved = async (updated: TransactionRow) => {
@@ -410,6 +462,24 @@ export function TransactionHistory({
                 </div>
               </div>
             )}
+
+            <TransactionDialog
+              open={txDialogOpen}
+              onOpenChange={setTxDialogOpen}
+              onEditTransaction={handleTxDialogEdit}
+              currentPortfolio={currentPortfolio}
+              portfolios={portfolios}
+              initialData={txDialogData}
+            />
+
+            <DividendDialog
+              open={dividendOpen}
+              onOpenChange={setDividendOpen}
+              onEditTransaction={handleTxDialogEdit}
+              currentPortfolio={currentPortfolio}
+              portfolios={portfolios}
+              initialData={dividendDialogData}
+            />
 
             <EditTransactionDialog
               open={editOpen}

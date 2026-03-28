@@ -34,15 +34,26 @@ type Currency = "EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | 
 interface TransactionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAddTransaction: (transaction: Omit<Transaction, "id">, portfolioId?: string) => void;
+  onAddTransaction?: (transaction: Omit<Transaction, "id">, portfolioId?: string) => void;
+  onEditTransaction?: (updated: Transaction & { portfolioId?: string }) => Promise<void>;
   currentPortfolio?: Portfolio;
   portfolios?: Portfolio[];
   initialData?: {
+    // Champs création
     code?: string;
     name?: string;
     type?: "achat" | "vente" | "dividende";
     quantity?: number;
     portfolioId?: string;
+    // Champs édition (editId = mode édition)
+    editId?: string;
+    date?: string;
+    unitPrice?: number;
+    currency?: string;
+    conversionRate?: number; // convention stockée : 1 devise = ? EUR (= 1/taux affiché)
+    fees?: number;
+    tff?: number;
+    sector?: string;
   };
 }
 
@@ -80,6 +91,9 @@ export function TransactionDialog({
   const [sector, setSector] = useState("");
   const [autoTFF, setAutoTFF] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(false);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(
+    currentPortfolio?.id ?? initialData?.portfolioId
+  );
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
@@ -88,11 +102,12 @@ export function TransactionDialog({
   const { getConversionRate } = useExchangeRates();
 
   const effectivePortfolio =
-    currentPortfolio ||
-    (initialData?.portfolioId && portfolios
-      ? portfolios.find(p => p.id === initialData.portfolioId)
-      : undefined);
+    (selectedPortfolioId && portfolios
+      ? portfolios.find(p => p.id === selectedPortfolioId)
+      : undefined) ??
+    currentPortfolio;
 
+  const isEditMode = !!initialData?.editId;
   const portfolioCurrency = (effectivePortfolio?.currency as Currency) || "EUR";
   const isForeignCurrency = currency !== portfolioCurrency;
   const showTFF = type === "achat" && portfolioCurrency === "EUR" && currency === "EUR";
@@ -104,6 +119,7 @@ export function TransactionDialog({
       setCode(""); setName(""); setType("achat"); setQuantity(""); setUnitPrice("");
       setCurrency(portfolioCurrency); setConversionRate("1");
       setFees(""); setTff(""); setSector(""); setAutoTFF(false);
+      setSelectedPortfolioId(currentPortfolio?.id ?? initialData?.portfolioId);
       nameTouchedRef.current = false;
       rateTouchedRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -117,12 +133,33 @@ export function TransactionDialog({
       if (initialData.name)     { setName(initialData.name); nameTouchedRef.current = true; }
       if (initialData.type && initialData.type !== "dividende") setType(initialData.type);
       if (initialData.quantity) setQuantity(String(initialData.quantity));
+
+      if (initialData.editId) {
+        // Mode édition : pré-remplir tous les champs
+        if (initialData.date)      setDate(initialData.date);
+        if (initialData.unitPrice != null) setUnitPrice(String(initialData.unitPrice));
+        if (initialData.fees  != null) setFees(String(initialData.fees));
+        if (initialData.tff   != null) {
+          setTff(String(initialData.tff));
+          if ((initialData.tff || 0) > 0) setAutoTFF(true);
+        }
+        if (initialData.sector)    setSector(initialData.sector);
+        if (initialData.portfolioId) setSelectedPortfolioId(initialData.portfolioId);
+        // Devise : pré-remplir avant le taux pour que isForeignCurrency soit correct
+        const cur = (initialData.currency as Currency) || portfolioCurrency;
+        setCurrency(cur);
+        // Taux : convertir depuis la convention stockée (1/taux affiché) vers la convention affichée
+        const storedRate = initialData.conversionRate ?? 1;
+        const displayedRate = cur !== portfolioCurrency && storedRate > 0 ? 1 / storedRate : 1;
+        setConversionRate(displayedRate.toFixed(4));
+        rateTouchedRef.current = true; // empêcher l'écrasement auto
+      }
     }
   }, [open, initialData]);
 
-  // ── Devise par défaut portefeuille ───────────────────────────
+  // ── Devise par défaut portefeuille (mode création uniquement) ─
   useEffect(() => {
-    if (open) { setCurrency(portfolioCurrency); setConversionRate("1"); }
+    if (open && !initialData?.editId) { setCurrency(portfolioCurrency); setConversionRate("1"); }
   }, [open, portfolioCurrency]);
 
   // ── Taux de change automatique quand devise change ───────────
@@ -140,8 +177,9 @@ export function TransactionDialog({
     }
   }, [currency, portfolioCurrency, isForeignCurrency, getConversionRate]);
 
-  // ── Auto-fetch ticker + nom + secteur ────────────────────────
+  // ── Auto-fetch ticker + nom + secteur (mode création uniquement) ──
   useEffect(() => {
+    if (isEditMode) return; // en édition, ne pas écraser les valeurs existantes
     const trimmed = code.trim().toUpperCase();
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!trimmed || trimmed.length < 2) { setFetchLoading(false); return; }
@@ -170,8 +208,9 @@ export function TransactionDialog({
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [code]);
 
-  // ── Auto-calcul frais ────────────────────────────────────────
+  // ── Auto-calcul frais (mode création uniquement) ─────────────
   useEffect(() => {
+    if (isEditMode) return;
     if (!quantity || !unitPrice || !effectivePortfolio?.fees.defaultFeesPercent) return;
     setFees(computeFees().toFixed(2));
   }, [quantity, unitPrice, currency, conversionRate, type, effectivePortfolio?.fees]);
@@ -223,20 +262,27 @@ export function TransactionDialog({
   const hasValues    = qty > 0 && price > 0;
 
   // ── Soumission ───────────────────────────────────────────────
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !name || !quantity || !unitPrice) { alert("Veuillez remplir tous les champs obligatoires"); return; }
     // PortfolioLayout utilise unitPrice * conversionRate → on stocke l'inverse (1 devise = ? EUR)
     const storedConvRate = isForeignCurrency && convRate > 0 ? 1 / convRate : 1;
-    onAddTransaction({
+    const tffFinal = showTFF ? (parseFloat(tff) || 0) : 0;
+    const txData = {
       date, code: code.toUpperCase(), name, type,
       quantity: qty, unitPrice: price,
       fees: feesVal,
-      tff: showTFF && autoTFF ? tffVal : 0,
+      tff: tffFinal,
       currency, conversionRate: storedConvRate,
       tax: 0,
       sector: sector || undefined,
-    }, initialData?.portfolioId);
+    };
+
+    if (isEditMode && initialData?.editId && onEditTransaction) {
+      await onEditTransaction({ ...txData, id: initialData.editId, portfolioId: selectedPortfolioId });
+    } else if (onAddTransaction) {
+      onAddTransaction(txData, selectedPortfolioId);
+    }
     onOpenChange(false);
   };
 
@@ -244,12 +290,27 @@ export function TransactionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-1">
-          <DialogTitle>Nouvelle transaction</DialogTitle>
-          {effectivePortfolio && (
+          <DialogTitle>{isEditMode ? "Modifier le mouvement" : "Nouvelle transaction"}</DialogTitle>
+          {portfolios && portfolios.length > 1 ? (
+            <DialogDescription asChild>
+              <div>
+                <Select value={selectedPortfolioId} onValueChange={setSelectedPortfolioId}>
+                  <SelectTrigger className="h-8 text-sm w-56">
+                    <SelectValue placeholder="Sélectionner un portefeuille" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {portfolios.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </DialogDescription>
+          ) : effectivePortfolio ? (
             <DialogDescription>
               <span className="font-medium text-primary">{effectivePortfolio.name}</span>
             </DialogDescription>
-          )}
+          ) : null}
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -439,7 +500,7 @@ export function TransactionDialog({
 
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>Annuler</Button>
-            <Button type="submit" size="sm">Ajouter le mouvement</Button>
+            <Button type="submit" size="sm">{isEditMode ? "Enregistrer" : "Ajouter le mouvement"}</Button>
           </div>
 
         </form>
