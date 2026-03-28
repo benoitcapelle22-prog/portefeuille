@@ -24,10 +24,14 @@ import { Alert, AlertDescription } from "./ui/alert";
 
 interface ImportTransactionsProps {
   onImportTransactions: (transactions: Omit<Transaction, "id">[]) => void | Promise<void>;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function ImportTransactions({ onImportTransactions }: ImportTransactionsProps) {
-  const [open, setOpen] = useState(false);
+export function ImportTransactions({ onImportTransactions, open: controlledOpen, onOpenChange }: ImportTransactionsProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string[][]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -290,20 +294,22 @@ export function ImportTransactions({ onImportTransactions }: ImportTransactionsP
     window.URL.revokeObjectURL(url);
   };
 
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isControlled) setInternalOpen(isOpen);
+    if (onOpenChange) onOpenChange(isOpen);
+    if (!isOpen) resetForm();
+  };
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(isOpen) => {
-        setOpen(isOpen);
-        if (!isOpen) resetForm();
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <Upload className="h-4 w-4" />
-          Importer des transactions
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button variant="outline" className="gap-2">
+            <Upload className="h-4 w-4" />
+            Importer des transactions
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>

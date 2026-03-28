@@ -113,9 +113,10 @@ export async function pickAutoBackupFile() {
   if (!window.showSaveFilePicker) {
     throw new Error('Sauvegarde automatique non supportée sur ce navigateur. Utilise Chrome ou Edge.');
   }
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   // @ts-ignore
   const handle = await window.showSaveFilePicker({
-    suggestedName: 'portfolio-auto-backup.json',
+    suggestedName: `portfolio-auto-backup-${today}.json`,
     types: [{ description: 'Backup JSON', accept: { 'application/json': ['.json'] } }],
   });
   return handle as FileSystemFileHandle;

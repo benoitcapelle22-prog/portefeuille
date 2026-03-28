@@ -4,16 +4,14 @@ import { CurrentPositions } from "../components/CurrentPositions";
 import { ClosedPositions } from "../components/ClosedPositions";
 import { TransactionHistory } from "../components/TransactionHistory";
 import { DividendsHistory } from "../components/DividendsHistory";
-import { ImportTransactions } from "../components/ImportTransactions";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { Button } from "../components/ui/button";
-import { RefreshCw, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 export function TransactionsPage() {
   const {
     currentData,
     currentPortfolio,
-    handleImportTransactions,
     handleDeleteTransaction,
     handleEditTransaction,
     handlePositionAction,
@@ -23,11 +21,8 @@ export function TransactionsPage() {
     portfolios,
     currentPortfolioId,
     refreshData,
-    recalcCashFromDB,
     setDialogOpen,
   } = usePortfolio();
-
-  const [recalcLoading, setRecalcLoading] = useState(false);
 
   // Onglet contrôlé : reset à "positions" à chaque changement de portefeuille
   const [activeTab, setActiveTab] = useState("positions");
@@ -39,23 +34,6 @@ export function TransactionsPage() {
   useEffect(() => {
     refreshData();
   }, [currentPortfolioId]);
-
-  const handleRecalcCash = async () => {
-    if (!currentPortfolioId || currentPortfolioId === "ALL") {
-      alert("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
-      return;
-    }
-    setRecalcLoading(true);
-    try {
-      await recalcCashFromDB(currentPortfolioId);
-      await refreshData();
-      alert("✅ Liquidités recalculées.");
-    } catch (e) {
-      alert("❌ Erreur lors du recalcul.");
-    } finally {
-      setRecalcLoading(false);
-    }
-  };
 
   const isConsolidatedView = currentPortfolioId === "ALL";
   const displayCurrency = isConsolidatedView ? "EUR" : currentPortfolio?.currency;
@@ -77,17 +55,6 @@ export function TransactionsPage() {
 
       <TabsContent value="positions">
         <div className="flex justify-end gap-2 mb-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRecalcCash}
-            disabled={recalcLoading || isConsolidatedView}
-            title="Recalcule les liquidités depuis toutes les transactions"
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${recalcLoading ? "animate-spin" : ""}`} />
-            Recalculer les liquidités
-          </Button>
-          <ImportTransactions onImportTransactions={handleImportTransactions} />
           <Button
             size="sm"
             onClick={() => setDialogOpen(true)}

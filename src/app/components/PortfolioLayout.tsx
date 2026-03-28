@@ -5,7 +5,8 @@ import { Transaction } from "./TransactionForm";
 import { Position } from "./CurrentPositions";
 import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
-import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw } from "lucide-react";
+import { ImportTransactions } from "./ImportTransactions";
+import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
@@ -97,6 +98,8 @@ export function PortfolioLayout() {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupNeedsPermission, setAutoBackupNeedsPermission] = useState(false);
   const [totalPortfolio, setTotalPortfolio] = useState(0);
+  const [importTxOpen, setImportTxOpen] = useState(false);
+  const [recalcLoading, setRecalcLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ============================================================
@@ -781,6 +784,23 @@ const recalcCashFromDB = async (portfolioId: string) => {
     setTotalPortfolio,
   };
 
+  const handleRecalcCash = async () => {
+    if (!currentPortfolioId || currentPortfolioId === "ALL") {
+      alert("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
+      return;
+    }
+    setRecalcLoading(true);
+    try {
+      await recalcCashFromDB(currentPortfolioId);
+      await refreshData();
+      alert("✅ Liquidités recalculées.");
+    } catch {
+      alert("❌ Erreur lors du recalcul.");
+    } finally {
+      setRecalcLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -819,34 +839,54 @@ const recalcCashFromDB = async (portfolioId: string) => {
 
             <div className="flex flex-wrap items-center gap-2">
               <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleImport} />
-              <Button onClick={exportDatabase} className="gap-2"><Download className="h-4 w-4" />Exporter</Button>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="gap-2"><HardDrive className="h-4 w-4" />Sauvegarde</Button>
+                  <Button variant="outline" size="icon" title="Actions"><MoreVertical className="h-4 w-4" /></Button>
                 </DropdownMenuTrigger>
-
-                {autoBackupNeedsPermission && (
-                  <Button variant="outline" onClick={onReauthorizeAutoBackup} className="gap-2"><HardDrive className="h-4 w-4" />Réactiver</Button>
-                )}
-
-                <span className={["ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium", autoBackupEnabled ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"].join(" ")}>
-                  Auto: {autoBackupEnabled ? "ON" : "OFF"}
-                </span>
-
-                <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem onClick={exportDatabase} className="gap-2"><Download className="h-4 w-4" />Exporter</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />Importer un fichier…</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onEnableAutoBackup} className="gap-2"><HardDrive className="h-4 w-4" />Activer sauvegarde automatique</DropdownMenuItem>
                   <DropdownMenuItem onClick={onDisableAutoBackup} className="gap-2"><PauseCircle className="h-4 w-4" />Désactiver sauvegarde automatique</DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleRecalcCash}
+                    disabled={recalcLoading || !currentPortfolioId || currentPortfolioId === "ALL"}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${recalcLoading ? "animate-spin" : ""}`} />
+                    Recalculer les liquidités
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setImportTxOpen(true)} className="gap-2"><Upload className="h-4 w-4" />Importer des transactions</DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleResetDatabase} className="gap-2 text-destructive focus:text-destructive"><RotateCcw className="h-4 w-4" />Réinitialiser…</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              {autoBackupNeedsPermission && (
+                <Button variant="outline" size="sm" onClick={onReauthorizeAutoBackup} className="gap-2"><HardDrive className="h-4 w-4" />Réactiver</Button>
+              )}
+
+              <button
+                onClick={autoBackupEnabled ? onDisableAutoBackup : onEnableAutoBackup}
+                className={["inline-flex items-center rounded-full px-2 py-1 text-xs font-medium cursor-pointer transition-opacity hover:opacity-70", autoBackupEnabled ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"].join(" ")}
+                title={autoBackupEnabled ? "Désactiver la sauvegarde automatique" : "Activer la sauvegarde automatique"}
+              >
+                Auto : {autoBackupEnabled ? "ON" : "OFF"}
+              </button>
             </div>
           </div>
 
           <Outlet />
+
+          <ImportTransactions
+            open={importTxOpen}
+            onOpenChange={setImportTxOpen}
+            onImportTransactions={handleImportTransactions}
+          />
 
           <TransactionDialog
             open={dialogOpen}
