@@ -7,53 +7,29 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
 import { Loader2 } from "lucide-react";
+import { useExchangeRates } from "../hooks/useExchangeRates";
 
-const SECTORS = ["Finance", "Technology", "Santé", "Énergie", "Industrie", "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre"];
+const SECTORS = [
+  "Finance", "Technology", "Santé", "Énergie", "Industrie",
+  "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre",
+];
 
-// Correspondance noms Yahoo Finance → valeurs du menu déroulant
 const SECTOR_MAP: Record<string, string> = {
-  // Technology
-  "Technology":                "Technology",
-  "Information Technology":    "Technology",
-  // Finance
-  "Financial Services":        "Finance",
-  "Finance":                   "Finance",
-  "Banking":                   "Finance",
-  "Insurance":                 "Finance",
-  // Santé
-  "Healthcare":                "Santé",
-  "Health Care":               "Santé",
-  "Biotechnology":             "Santé",
-  "Pharmaceuticals":           "Santé",
-  // Énergie
-  "Energy":                    "Énergie",
-  "Oil & Gas":                 "Énergie",
-  // Industrie
-  "Industrials":               "Industrie",
-  "Industrial":                "Industrie",
-  "Aerospace & Defense":       "Industrie",
-  "Manufacturing":             "Industrie",
-  // Consommation
-  "Consumer Cyclical":         "Consommation",
-  "Consumer Defensive":        "Consommation",
-  "Consumer Staples":          "Consommation",
-  "Consumer Discretionary":    "Consommation",
-  "Retail":                    "Consommation",
-  // Immobilier
-  "Real Estate":               "Immobilier",
-  // Matériaux
-  "Basic Materials":           "Matériaux",
-  "Materials":                 "Matériaux",
-  "Chemicals":                 "Matériaux",
-  "Mining":                    "Matériaux",
-  // Services publics
-  "Utilities":                 "Services publics",
-  // Télécommunications
-  "Communication Services":    "Télécommunications",
-  "Telecommunications":        "Télécommunications",
-  "Telecom":                   "Télécommunications",
-  "Media":                     "Télécommunications",
+  "Technology": "Technology", "Information Technology": "Technology",
+  "Financial Services": "Finance", "Finance": "Finance", "Banking": "Finance", "Insurance": "Finance",
+  "Healthcare": "Santé", "Health Care": "Santé", "Biotechnology": "Santé", "Pharmaceuticals": "Santé",
+  "Energy": "Énergie", "Oil & Gas": "Énergie",
+  "Industrials": "Industrie", "Industrial": "Industrie", "Aerospace & Defense": "Industrie", "Manufacturing": "Industrie",
+  "Consumer Cyclical": "Consommation", "Consumer Defensive": "Consommation", "Consumer Staples": "Consommation",
+  "Consumer Discretionary": "Consommation", "Retail": "Consommation",
+  "Real Estate": "Immobilier",
+  "Basic Materials": "Matériaux", "Materials": "Matériaux", "Chemicals": "Matériaux", "Mining": "Matériaux",
+  "Utilities": "Services publics",
+  "Communication Services": "Télécommunications", "Telecommunications": "Télécommunications",
+  "Telecom": "Télécommunications", "Media": "Télécommunications",
 };
+
+type Currency = "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
 
 interface TransactionDialogProps {
   open: boolean;
@@ -72,397 +48,395 @@ interface TransactionDialogProps {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 pt-2">
+    <div className="flex items-center gap-2 pt-1">
       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</span>
       <div className="flex-1 h-px bg-border" />
     </div>
   );
 }
 
+function getCurrencySymbol(curr: string) {
+  switch (curr) {
+    case "EUR": return "€";  case "USD": return "$";  case "GBP": return "£";
+    case "JPY": return "¥";  case "CAD": return "CA$"; case "CHF": return "CHF";
+    case "DKK": case "SEK": return "kr";
+    default: return curr;
+  }
+}
+
 export function TransactionDialog({
-  open,
-  onOpenChange,
-  onAddTransaction,
-  currentPortfolio,
-  portfolios,
-  initialData,
+  open, onOpenChange, onAddTransaction, currentPortfolio, portfolios, initialData,
 }: TransactionDialogProps) {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [type, setType] = useState<"achat" | "vente" | "dividende">("achat");
+  const [type, setType] = useState<"achat" | "vente">("achat");
   const [quantity, setQuantity] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
+  const [currency, setCurrency] = useState<Currency>("EUR");
+  const [conversionRate, setConversionRate] = useState("1");
   const [fees, setFees] = useState("");
   const [tff, setTff] = useState("");
-  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK">("EUR");
-  const [conversionRate, setConversionRate] = useState("");
-  const [tax, setTax] = useState("");
   const [sector, setSector] = useState("");
-  const [sectorLoading, setSectorLoading] = useState(false);
   const [autoTFF, setAutoTFF] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(false);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameTouchedRef = useRef(false);
+  const rateTouchedRef = useRef(false);
+
+  const { getConversionRate } = useExchangeRates();
 
   const effectivePortfolio =
     currentPortfolio ||
     (initialData?.portfolioId && portfolios
-      ? portfolios.find((p) => p.id === initialData.portfolioId)
+      ? portfolios.find(p => p.id === initialData.portfolioId)
       : undefined);
 
-  // Pré-remplir les champs quand le dialog s'ouvre
+  const portfolioCurrency = (effectivePortfolio?.currency as Currency) || "EUR";
+  const isForeignCurrency = currency !== portfolioCurrency;
+  const showTFF = type === "achat" && portfolioCurrency === "EUR" && currency === "EUR";
+
+  // ── Reset à la fermeture ───────────────────────────────────────
+  useEffect(() => {
+    if (!open) {
+      setDate(new Date().toISOString().split("T")[0]);
+      setCode(""); setName(""); setType("achat"); setQuantity(""); setUnitPrice("");
+      setCurrency(portfolioCurrency); setConversionRate("1");
+      setFees(""); setTff(""); setSector(""); setAutoTFF(false);
+      nameTouchedRef.current = false;
+      rateTouchedRef.current = false;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    }
+  }, [open]);
+
+  // ── Pré-remplissage depuis initialData ────────────────────────
   useEffect(() => {
     if (open && initialData) {
-      setCode(initialData.code || "");
-      setName(initialData.name || "");
-      setType(initialData.type || "achat");
-      setQuantity(initialData.quantity?.toString() || "");
+      if (initialData.code)     setCode(initialData.code);
+      if (initialData.name)     { setName(initialData.name); nameTouchedRef.current = true; }
+      if (initialData.type && initialData.type !== "dividende") setType(initialData.type);
+      if (initialData.quantity) setQuantity(String(initialData.quantity));
     }
   }, [open, initialData]);
 
-  // Initialiser la devise par défaut
+  // ── Devise par défaut portefeuille ───────────────────────────
   useEffect(() => {
-    if (open && effectivePortfolio) {
-      setCurrency(effectivePortfolio.currency as "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK");
-      setConversionRate("1");
-    }
-  }, [open, effectivePortfolio]);
+    if (open) { setCurrency(portfolioCurrency); setConversionRate("1"); }
+  }, [open, portfolioCurrency]);
 
-  // Calcul automatique des frais
+  // ── Taux de change automatique quand devise change ───────────
   useEffect(() => {
-    if (quantity && unitPrice && (type === "achat" || type === "vente") && effectivePortfolio?.fees.defaultFeesPercent) {
-      setFees(calculateFees().toFixed(2));
+    if (!isForeignCurrency) { setConversionRate("1"); rateTouchedRef.current = false; return; }
+    if (rateTouchedRef.current) return; // ne pas écraser si l'utilisateur a saisi manuellement
+    // Calcul : 1 devise_action = ? devise_portefeuille
+    // getConversionRate retourne "1 X = ? EUR"
+    const rateActionToEur = getConversionRate(currency);        // 1 action_currency → EUR
+    const ratePortfolioToEur = getConversionRate(portfolioCurrency); // 1 portfolio_currency → EUR
+    if (ratePortfolioToEur > 0) {
+      const rate = rateActionToEur / ratePortfolioToEur;
+      setConversionRate(rate.toFixed(4));
     }
-  }, [quantity, unitPrice, currency, conversionRate, type, effectivePortfolio]);
+  }, [currency, portfolioCurrency, isForeignCurrency, getConversionRate]);
 
-  // Calcul automatique de la TFF si autoTFF activé
-  useEffect(() => {
-    if (autoTFF && quantity && unitPrice && currency === "EUR" && type === "achat") {
-      setTff(calculateTFF().toFixed(2));
-    }
-  }, [autoTFF, quantity, unitPrice, currency, type]);
-
-  // Lookup Yahoo Finance : nom + secteur au changement de code
+  // ── Auto-fetch ticker + nom + secteur ────────────────────────
   useEffect(() => {
     const trimmed = code.trim().toUpperCase();
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (!trimmed || trimmed.length < 2) {
-      setSectorLoading(false);
-      return;
-    }
-
-    setSectorLoading(true);
+    if (!trimmed || trimmed.length < 2) { setFetchLoading(false); return; }
+    setFetchLoading(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null);
-        if (res?.name && !initialData?.name) setName(res.name);
-        if (res?.sector) {
-          const mapped = SECTOR_MAP[res.sector] || res.sector;
+        const [tickerRes, searchRes] = await Promise.all([
+          fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        if (tickerRes?.price != null) setUnitPrice(String(tickerRes.price));
+        if (tickerRes?.currency) {
+          const apiCur = tickerRes.currency.toUpperCase() as Currency;
+          const known: Currency[] = ["EUR", "USD", "GBP", "CHF", "JPY", "CAD", "DKK", "SEK"];
+          if (known.includes(apiCur)) { setCurrency(apiCur); rateTouchedRef.current = false; }
+        }
+        const fetchedName = tickerRes?.name ?? searchRes?.name ?? null;
+        if (fetchedName && !nameTouchedRef.current) setName(fetchedName);
+        const fetchedSector = searchRes?.sector ?? null;
+        if (fetchedSector && !sector) {
+          const mapped = SECTOR_MAP[fetchedSector] ?? fetchedSector;
           setSector(SECTORS.includes(mapped) ? mapped : "");
         }
-      } finally {
-        setSectorLoading(false);
-      }
+      } finally { setFetchLoading(false); }
     }, 900);
-
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [code]);
 
-  const currencySymbol = effectivePortfolio?.currency === "USD" ? "$" : "€";
-  const showTFF = effectivePortfolio?.currency === "EUR";
+  // ── Auto-calcul frais ────────────────────────────────────────
+  useEffect(() => {
+    if (!quantity || !unitPrice || !effectivePortfolio?.fees.defaultFeesPercent) return;
+    setFees(computeFees().toFixed(2));
+  }, [quantity, unitPrice, currency, conversionRate, type, effectivePortfolio?.fees]);
 
-  const getCurrencySymbol = (curr: string) => {
-    switch (curr) {
-      case "USD": return "$";
-      case "EUR": return "€";
-      case "GBP": return "£";
-      case "JPY": return "¥";
-      default: return curr;
-    }
-  };
-  const transactionCurrencySymbol = getCurrencySymbol(currency);
+  // ── Auto-calcul TFF ──────────────────────────────────────────
+  useEffect(() => {
+    if (!autoTFF || !showTFF) return;
+    setTff(computeTFF().toFixed(2));
+  }, [autoTFF, quantity, unitPrice, showTFF]);
 
-  const calculateFees = () => {
+  useEffect(() => { if (!showTFF) { setAutoTFF(false); setTff(""); } }, [showTFF]);
+
+  // ── Calculs ──────────────────────────────────────────────────
+  const qty      = parseFloat(quantity) || 0;
+  const price    = parseFloat(unitPrice) || 0;
+  const convRate = parseFloat(conversionRate) || 1;
+  const feesVal  = parseFloat(fees) || 0;
+  const tffVal   = autoTFF ? (parseFloat(tff) || 0) : 0;
+
+  const montantBrutDevise    = qty * price;
+  const montantBrutConverti  = montantBrutDevise * convRate;
+  const montantTotal = type === "achat" ? montantBrutConverti + feesVal + tffVal : montantBrutConverti - feesVal;
+  const pruOuNet = qty > 0 ? montantTotal / qty : 0;
+
+  function computeFees() {
     if (!effectivePortfolio?.fees.defaultFeesPercent || !quantity || !unitPrice) return 0;
-    const convRate = parseFloat(conversionRate) || 1;
-    const total = parseFloat(quantity) * parseFloat(unitPrice) * convRate;
-    const fromPercent = (total * effectivePortfolio.fees.defaultFeesPercent) / 100;
-    return Math.max(fromPercent, effectivePortfolio.fees.defaultFeesMin || 0);
-  };
+    const base = qty * price * convRate;
+    const fromPct = base * effectivePortfolio.fees.defaultFeesPercent / 100;
+    return Math.max(fromPct, effectivePortfolio.fees.defaultFeesMin || 0);
+  }
 
-  const calculateTFF = () => {
-    if (!showTFF || !effectivePortfolio?.fees.defaultTFF || !quantity || !unitPrice || currency !== "EUR") return 0;
-    return (parseFloat(quantity) * parseFloat(unitPrice) * effectivePortfolio.fees.defaultTFF) / 100;
-  };
+  function computeTFF() {
+    if (!effectivePortfolio?.fees.defaultTFF || !quantity || !unitPrice) return 0;
+    return qty * price * effectivePortfolio.fees.defaultTFF / 100;
+  }
 
-  const totalAmount = () => {
-    const qty = parseFloat(quantity) || 0;
-    const price = parseFloat(unitPrice) || 0;
-    const feesVal = type === "dividende" ? 0 : parseFloat(fees) || 0;
-    const tffVal = type === "dividende" || type === "vente" ? 0 : parseFloat(tff) || 0;
-    if (type === "achat") return qty * price + feesVal + tffVal;
-    if (type === "vente") return qty * price - feesVal;
-    return qty * price;
-  };
-
-  const calculatePRU = () => {
-    if (type !== "achat") return 0;
-    const qty = parseFloat(quantity) || 1;
-    const price = parseFloat(unitPrice) || 0;
-    const feesVal = parseFloat(fees) || 0;
-    const tffVal = parseFloat(tff) || 0;
-    const convRate = parseFloat(conversionRate) || 1;
-    if (currency === effectivePortfolio?.currency) return price + (feesVal + tffVal) / qty;
-    return price * convRate + (feesVal * convRate + tffVal) / qty;
-  };
-
-  // Détail du calcul des frais
   const feesDetail = () => {
     if (!effectivePortfolio?.fees.defaultFeesPercent || !quantity || !unitPrice) return null;
-    const convRate = parseFloat(conversionRate) || 1;
-    const total = parseFloat(quantity) * parseFloat(unitPrice) * convRate;
-    const fromPercent = (total * effectivePortfolio.fees.defaultFeesPercent) / 100;
+    const base = qty * price * convRate;
+    const fromPct = base * effectivePortfolio.fees.defaultFeesPercent / 100;
     const min = effectivePortfolio.fees.defaultFeesMin || 0;
-    const applied = Math.max(fromPercent, min);
-    const isMin = fromPercent < min;
-    return {
-      total: total.toFixed(2),
-      percent: effectivePortfolio.fees.defaultFeesPercent,
-      fromPercent: fromPercent.toFixed(2),
-      min,
-      applied: applied.toFixed(2),
-      isMin,
-    };
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code || !name || !quantity || !unitPrice) {
-      alert("Veuillez remplir tous les champs obligatoires");
-      return;
-    }
-    const calculatedTFF = type === "achat" && autoTFF ? parseFloat(tff) || calculateTFF() : 0;
-    onAddTransaction(
-      {
-        date,
-        code: code.toUpperCase(),
-        name,
-        type,
-        quantity: parseFloat(quantity),
-        unitPrice: parseFloat(unitPrice),
-        fees: parseFloat(fees) || 0,
-        tff: calculatedTFF,
-        currency,
-        conversionRate: parseFloat(conversionRate) || 1,
-        tax: parseFloat(tax) || 0,
-        sector: sector || undefined,
-      },
-      initialData?.portfolioId
-    );
-    // Reset
-    setCode(""); setName(""); setSector(""); setQuantity(""); setUnitPrice("");
-    setFees(""); setTff(""); setCurrency("EUR"); setConversionRate(""); setTax("");
-    setAutoTFF(false);
-    onOpenChange(false);
+    return { base: base.toFixed(2), percent: effectivePortfolio.fees.defaultFeesPercent, fromPct: fromPct.toFixed(2), min, isMin: fromPct < min };
   };
 
   const detail = feesDetail();
+  const portSymbol   = getCurrencySymbol(portfolioCurrency);
+  const actionSymbol = getCurrencySymbol(currency);
+  const hasValues    = qty > 0 && price > 0;
+
+  // ── Soumission ───────────────────────────────────────────────
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code || !name || !quantity || !unitPrice) { alert("Veuillez remplir tous les champs obligatoires"); return; }
+    onAddTransaction({
+      date, code: code.toUpperCase(), name, type,
+      quantity: qty, unitPrice: price,
+      fees: feesVal,
+      tff: showTFF && autoTFF ? tffVal : 0,
+      currency, conversionRate: convRate,
+      tax: 0,
+      sector: sector || undefined,
+    }, initialData?.portfolioId);
+    onOpenChange(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+        <DialogHeader className="pb-1">
           <DialogTitle>Nouvelle transaction</DialogTitle>
-          <DialogDescription>
-            {effectivePortfolio && (
+          {effectivePortfolio && (
+            <DialogDescription>
               <span className="font-medium text-primary">{effectivePortfolio.name}</span>
-            )}
-          </DialogDescription>
+            </DialogDescription>
+          )}
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
 
-          {/* ── IDENTIFICATION ── */}
+          {/* ── IDENTIFICATION ──────────────────────────────────── */}
           <SectionTitle>Identification</SectionTitle>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="date">Date</Label>
-              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="code">Code</Label>
-              <Input id="code" type="text" placeholder="Ex: AAPL" value={code} onChange={(e) => setCode(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="name">Nom de l'action</Label>
-              <Input id="name" type="text" placeholder="Ex: Apple Inc." value={name} onChange={(e) => setName(e.target.value)} required />
-            </div>
-            {type === "achat" && (
-              <div className="space-y-2">
-                <Label htmlFor="sector" className="flex items-center gap-2">
-                  Secteur
-                  {sectorLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-                </Label>
-                <Select value={sector} onValueChange={setSector}>
-                  <SelectTrigger id="sector">
-                    <SelectValue placeholder="Sélectionner…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SECTORS.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
+          <div className="grid grid-cols-4 gap-3">
 
-          {/* ── TRANSACTION ── */}
-          <SectionTitle>Transaction</SectionTitle>
-          <div className="grid grid-cols-2 gap-4">
-            {type !== "dividende" && (
-              <div className="space-y-2">
-                <Label htmlFor="type">Type mouvement</Label>
-                <Select value={type} onValueChange={(v: "achat" | "vente" | "dividende") => setType(v)}>
-                  <SelectTrigger id="type"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="achat">Achat</SelectItem>
-                    <SelectItem value="vente">Vente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="quantity">{type === "dividende" ? "Nombre d'actions" : "Nombre"}</Label>
-              <Input id="quantity" type="number" step="0.01" placeholder="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+            <div className="space-y-1">
+              <Label htmlFor="date" className="text-xs">Date</Label>
+              <Input id="date" type="date" value={date} onChange={e => setDate(e.target.value)} required className="h-8 text-sm" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="unitPrice">
-                {type === "dividende" ? "Dividende par action" : "Cours"} ({transactionCurrencySymbol})
+
+            <div className="space-y-1">
+              <Label htmlFor="code" className="text-xs flex items-center gap-1">
+                Code {fetchLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
               </Label>
-              <Input id="unitPrice" type="number" step="0.01" placeholder="0.00" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} required />
+              <Input id="code" type="text" placeholder="Ex: MC.PA" value={code}
+                onChange={e => setCode(e.target.value.toUpperCase())} required className="h-8 text-sm" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="currency">Devise</Label>
-              <Select value={currency} onValueChange={(v: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK") => setCurrency(v)}>
-                <SelectTrigger id="currency"><SelectValue /></SelectTrigger>
+
+            <div className="space-y-1 col-span-2">
+              <Label htmlFor="name" className="text-xs">Nom</Label>
+              <Input id="name" type="text" placeholder="Nom de l'action" value={name}
+                onChange={e => { setName(e.target.value); nameTouchedRef.current = true; }} required className="h-8 text-sm" />
+            </div>
+
+            <div className="space-y-1 col-span-4">
+              <Label htmlFor="sector" className="text-xs">Secteur</Label>
+              <Select value={sector} onValueChange={setSector}>
+                <SelectTrigger id="sector" className="h-8 text-sm"><SelectValue placeholder="Sélectionner…" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="EUR">EUR (€)</SelectItem>
-                  <SelectItem value="USD">USD ($)</SelectItem>
-                  <SelectItem value="GBP">GBP (£)</SelectItem>
-                  <SelectItem value="CHF">CHF</SelectItem>
-                  <SelectItem value="JPY">JPY (¥)</SelectItem>
-                  <SelectItem value="CAD">CAD ($)</SelectItem>
-                  <SelectItem value="DKK">DKK (kr)</SelectItem>
-                  <SelectItem value="SEK">SEK (kr)</SelectItem>
+                  {SECTORS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            {currency !== effectivePortfolio?.currency && (
-              <div className="space-y-2 col-span-2">
-                <Label htmlFor="conversionRate">Taux de conversion (1 {currency} = ? {effectivePortfolio?.currency})</Label>
-                <Input id="conversionRate" type="number" step="0.0001" placeholder="1.0000" value={conversionRate} onChange={(e) => setConversionRate(e.target.value)} />
-              </div>
-            )}
-            {type === "dividende" && (
-              <div className="space-y-2">
-                <Label htmlFor="tax">Impôt ({transactionCurrencySymbol})</Label>
-                <Input id="tax" type="number" step="0.01" placeholder="0.00" value={tax} onChange={(e) => setTax(e.target.value)} />
-              </div>
-            )}
+
           </div>
 
-          {/* ── FRAIS ── */}
-          {type !== "dividende" && (
-            <>
-              <SectionTitle>Frais</SectionTitle>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fees">Frais ({transactionCurrencySymbol})</Label>
-                  <Input id="fees" type="number" step="0.01" placeholder="0.00" value={fees} onChange={(e) => setFees(e.target.value)} />
-                  {detail && (
-                    <p className="text-xs text-muted-foreground">
-                      {detail.total} × {detail.percent}% = {detail.fromPercent}{currencySymbol}
-                      {detail.isMin && <span className="ml-1 text-amber-600">(min. {detail.min}{currencySymbol})</span>}
-                    </p>
-                  )}
-                </div>
+          {/* ── TRANSACTION ─────────────────────────────────────── */}
+          <SectionTitle>Transaction</SectionTitle>
+          <div className="grid grid-cols-4 gap-3">
 
-                {showTFF && type === "achat" && currency === "EUR" && (
-                  <div className="space-y-2">
-                    <Label>TFF automatique</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={autoTFF ? "default" : "outline"}
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setAutoTFF(true);
-                          if (quantity && unitPrice) setTff(calculateTFF().toFixed(2));
-                        }}
-                      >
-                        OUI
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={!autoTFF ? "default" : "outline"}
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => { setAutoTFF(false); setTff(""); }}
-                      >
-                        NON
-                      </Button>
-                    </div>
-                    {autoTFF && (
-                      <Input id="tff" type="number" step="0.01" placeholder="0.00" value={tff} onChange={(e) => setTff(e.target.value)} disabled={autoTFF} />
-                    )}
-                    {autoTFF && effectivePortfolio?.fees.defaultTFF && (
-                      <p className="text-xs text-muted-foreground">Taux : {effectivePortfolio.fees.defaultTFF}%</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* ── RÉCAPITULATIF ── */}
-          <div className="grid grid-cols-2 gap-4 p-4 bg-primary/5 border border-primary/20 rounded-lg">
             <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {type === "dividende" ? "Dividende brut" : "Montant total"}
-              </p>
-              <p className="text-2xl font-bold text-primary">
-                {totalAmount().toFixed(2)} {transactionCurrencySymbol}
-              </p>
-              {currency !== effectivePortfolio?.currency && conversionRate && (
+              <Label htmlFor="type" className="text-xs">Type</Label>
+              <Select value={type} onValueChange={(v: "achat" | "vente") => setType(v)}>
+                <SelectTrigger id="type" className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="achat">Achat</SelectItem>
+                  <SelectItem value="vente">Vente</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="quantity" className="text-xs">Quantité</Label>
+              <Input id="quantity" type="number" step="0.01" placeholder="0" value={quantity}
+                onChange={e => setQuantity(e.target.value)} required className="h-8 text-sm" />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="currency" className="text-xs">Devise</Label>
+              <Select value={currency} onValueChange={(v: Currency) => { setCurrency(v); rateTouchedRef.current = false; }}>
+                <SelectTrigger id="currency" className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EUR">EUR €</SelectItem>
+                  <SelectItem value="USD">USD $</SelectItem>
+                  <SelectItem value="GBP">GBP £</SelectItem>
+                  <SelectItem value="CHF">CHF</SelectItem>
+                  <SelectItem value="JPY">JPY ¥</SelectItem>
+                  <SelectItem value="CAD">CAD $</SelectItem>
+                  <SelectItem value="DKK">DKK kr</SelectItem>
+                  <SelectItem value="SEK">SEK kr</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="unitPrice" className="text-xs">Cours ({actionSymbol})</Label>
+              <Input id="unitPrice" type="number" step="0.0001" placeholder="0.0000" value={unitPrice}
+                onChange={e => setUnitPrice(e.target.value)} required className="h-8 text-sm" />
+            </div>
+
+            {isForeignCurrency && (
+              <div className="space-y-1 col-span-4">
+                <Label htmlFor="conversionRate" className="text-xs">
+                  Taux de change — 1 {currency} = ? {portfolioCurrency}
+                </Label>
+                <Input id="conversionRate" type="number" step="0.0001" placeholder="1.0000" value={conversionRate}
+                  onChange={e => { setConversionRate(e.target.value); rateTouchedRef.current = true; }}
+                  className="h-8 text-sm" />
+              </div>
+            )}
+
+          </div>
+
+          {/* ── FRAIS ───────────────────────────────────────────── */}
+          <SectionTitle>Frais</SectionTitle>
+          <div className="grid grid-cols-2 gap-3">
+
+            <div className="space-y-1">
+              <Label htmlFor="fees" className="text-xs">Frais ({portSymbol})</Label>
+              <Input id="fees" type="number" step="0.01" placeholder="0.00" value={fees}
+                onChange={e => setFees(e.target.value)} className="h-8 text-sm" />
+              {detail && (
                 <p className="text-xs text-muted-foreground">
-                  = {(totalAmount() * (parseFloat(conversionRate) || 1)).toFixed(2)} {currencySymbol}
-                </p>
-              )}
-              {type === "dividende" && (
-                <p className="text-xs text-muted-foreground">
-                  Net : {(totalAmount() - (parseFloat(tax) || 0)).toFixed(2)} {transactionCurrencySymbol}
+                  {detail.base} × {detail.percent}% = {detail.fromPct}{portSymbol}
+                  {detail.isMin && <span className="ml-1 text-amber-600">(min. {detail.min}{portSymbol})</span>}
                 </p>
               )}
             </div>
 
-            {type === "achat" && (
+            {showTFF && (
               <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">PRU</p>
-                <p className="text-2xl font-bold text-primary">
-                  {quantity && unitPrice ? calculatePRU().toFixed(4) : "—"} {currencySymbol}
+                <Label className="text-xs">TFF automatique</Label>
+                <div className="flex gap-2">
+                  <Button type="button" variant={autoTFF ? "default" : "outline"} size="sm" className="flex-1 h-8"
+                    onClick={() => { setAutoTFF(true); if (quantity && unitPrice) setTff(computeTFF().toFixed(2)); }}>
+                    OUI
+                  </Button>
+                  <Button type="button" variant={!autoTFF ? "default" : "outline"} size="sm" className="flex-1 h-8"
+                    onClick={() => { setAutoTFF(false); setTff(""); }}>
+                    NON
+                  </Button>
+                  <Input id="tff" type="number" step="0.01" value={tff} placeholder="0.00"
+                    onChange={e => setTff(e.target.value)} className="h-8 text-sm w-24" />
+                </div>
+                <p className="text-xs text-muted-foreground" style={{ visibility: autoTFF && effectivePortfolio?.fees.defaultTFF ? "visible" : "hidden" }}>
+                  Taux TFF : {effectivePortfolio?.fees.defaultTFF ?? 0}%
                 </p>
               </div>
             )}
+
           </div>
 
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
-            <Button type="submit">Ajouter le mouvement</Button>
+          {/* ── RÉCAPITULATIF ───────────────────────────────────── */}
+          <div className="grid grid-cols-2 gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+
+            {/* Gauche : détail montants */}
+            <div className="space-y-1 text-sm">
+              {isForeignCurrency && hasValues && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Brut ({currency})</span>
+                    <span className="font-medium">{montantBrutDevise.toFixed(2)} {actionSymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Brut converti</span>
+                    <span className="font-medium">{montantBrutConverti.toFixed(2)} {portSymbol}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Frais {type === "achat" ? "+" : "−"}</span>
+                <span className="font-medium">{feesVal.toFixed(2)} {portSymbol}</span>
+              </div>
+              {showTFF && autoTFF && tffVal > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">TFF +</span>
+                  <span className="font-medium">{tffVal.toFixed(2)} {portSymbol}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Droite : total + PRU */}
+            <div className="space-y-1">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {type === "achat" ? "Total décaissé" : "Total encaissé"}
+                </p>
+                <p className="text-2xl font-bold text-primary">
+                  {hasValues ? montantTotal.toFixed(2) : "—"} {portSymbol}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {type === "achat" ? "PRU" : "Net / action"}
+                </p>
+                <p className="text-xl font-bold text-primary">
+                  {hasValues ? pruOuNet.toFixed(4) : "—"} {portSymbol}
+                </p>
+              </div>
+            </div>
+
           </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>Annuler</Button>
+            <Button type="submit" size="sm">Ajouter le mouvement</Button>
+          </div>
+
         </form>
       </DialogContent>
     </Dialog>
