@@ -10,7 +10,7 @@ export function PositionSizeCalculator() {
   const [buyPrice, setBuyPrice] = useState("7.3");
   const [stopLoss, setStopLoss] = useState("6.76");
   const [riskPercent, setRiskPercent] = useState("0.50");
-  const [baseRiskInput, setBaseRiskInput] = useState("0.50");
+  const [baseRiskInput, setBaseRiskInput] = useState(() => localStorage.getItem("psc_baseRisk") ?? "0.50");
   const [riskProfile, setRiskProfile] = useState<"speculatif" | "prudent" | "normal" | "agressif">("normal");
   
   // DECOTES
@@ -299,7 +299,7 @@ export function PositionSizeCalculator() {
                     type="number"
                     step="0.01"
                     value={baseRiskInput}
-                    onChange={(e) => setBaseRiskInput(e.target.value)}
+                    onChange={(e) => { setBaseRiskInput(e.target.value); localStorage.setItem("psc_baseRisk", e.target.value); }}
                     className="h-12 text-right font-bold text-lg bg-pink-100 dark:bg-pink-900 border-2 border-pink-300 dark:border-pink-700 pr-10"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-lg text-pink-600 dark:text-pink-400">%</span>
