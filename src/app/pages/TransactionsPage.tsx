@@ -22,6 +22,7 @@ export function TransactionsPage() {
     currentPortfolioId,
     refreshData,
     setDialogOpen,
+    setDialogInitialData,
   } = usePortfolio();
 
   // Onglet contrôlé : reset à "positions" à chaque changement de portefeuille
@@ -57,7 +58,10 @@ export function TransactionsPage() {
         <div className="flex justify-end gap-2 mb-4">
           <Button
             size="sm"
-            onClick={() => setDialogOpen(true)}
+            onClick={() => {
+              setDialogInitialData({});
+              setDialogOpen(true);
+            }}
           >
             <Plus className="h-4 w-4 mr-1" />
             Nouveau mouvement
@@ -86,6 +90,18 @@ export function TransactionsPage() {
       </TabsContent>
 
       <TabsContent value="dividendes">
+        <div className="flex justify-end mb-4">
+          <Button
+            size="sm"
+            onClick={() => {
+              setDialogInitialData({ type: "dividende" });
+              setDialogOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Nouveau dividende
+          </Button>
+        </div>
         <DividendsHistory
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}

@@ -73,6 +73,7 @@ export interface PortfolioContextType {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   dialogInitialData: any;
+  setDialogInitialData: (data: any) => void;
   refreshData: () => Promise<void>;
   recalcCashFromDB: (portfolioId: string) => Promise<void>;
   totalPortfolio: number;
@@ -778,6 +779,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
     dialogOpen,
     setDialogOpen,
     dialogInitialData,
+    setDialogInitialData,
     refreshData,
     recalcCashFromDB,
     totalPortfolio,
