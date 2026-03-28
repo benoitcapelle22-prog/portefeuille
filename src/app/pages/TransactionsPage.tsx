@@ -114,6 +114,8 @@ export function TransactionsPage() {
           onDeleteTransaction={handleDeleteTransaction}
           onEditTransaction={handleEditTransaction}
           portfolioCurrency={displayCurrency}
+          portfolios={portfolios}
+          currentPortfolioId={currentPortfolioId || undefined}
         />
       </TabsContent>
     </Tabs>

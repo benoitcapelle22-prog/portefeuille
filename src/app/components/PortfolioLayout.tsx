@@ -375,7 +375,7 @@ export function PortfolioLayout() {
         const data = portfolioData[portfolio.id];
         if (!data) return;
         const id = portfolio.code || portfolio.name;
-        data.transactions.forEach(t => allTx.push({ ...t, portfolioCode: id }));
+        data.transactions.forEach(t => allTx.push({ ...t, portfolioCode: id, portfolioId: portfolio.id } as any));
         data.positions.forEach(p => allPos.push({ ...p, portfolioCode: id, portfolioId: portfolio.id }));
         data.closedPositions.forEach(cp => allClosed.push({ ...cp, portfolioCode: id }));
       });
@@ -601,9 +601,18 @@ export function PortfolioLayout() {
   // ============================================================
 
   const handleEditTransaction = async (updated: Transaction) => {
-    if (!currentPortfolioId || currentPortfolioId === "ALL") return;
+    const effectivePortfolioId = (updated as any).portfolioId || currentPortfolioId;
+    if (!effectivePortfolioId || effectivePortfolioId === "ALL") return;
 
-    await supabase.from("transactions").update({
+    // Trouver le portefeuille d'origine de la transaction
+    const originalPortfolioId = Object.entries(portfolioData).find(
+      ([, d]) => d.transactions.some(t => t.id === updated.id)
+    )?.[0];
+
+    const portfolioChanged = originalPortfolioId && originalPortfolioId !== effectivePortfolioId;
+
+    // Mise à jour Supabase (champs + portfolio_id si changé)
+    const patch: Record<string, any> = {
       date: updated.date,
       code: updated.code?.toUpperCase(),
       name: updated.name,
@@ -616,9 +625,85 @@ export function PortfolioLayout() {
       conversion_rate: Number(updated.conversionRate) || 1,
       tax: updated.type === "dividende" ? ((updated as any).tax ?? null) : null,
       sector: (updated as any).sector ?? null,
-    }).eq("id", updated.id);
+    };
+    if (portfolioChanged) patch.portfolio_id = effectivePortfolioId;
 
-    const updatedTransactions = currentData.transactions.map(t =>
+    await supabase.from("transactions").update(patch).eq("id", updated.id);
+
+    // Si le portefeuille a changé, recalculer les positions des deux portefeuilles
+    if (portfolioChanged && originalPortfolioId) {
+      // 1. Recalc portefeuille d'origine (sans la transaction déplacée)
+      const origTxs = (portfolioData[originalPortfolioId]?.transactions ?? []).filter(t => t.id !== updated.id);
+      const origPositions: DBPosition[] = [];
+      const origClosed: DBClosedPosition[] = [];
+      origTxs.filter(t => t.type === "achat" || t.type === "vente").sort((a, b) => parseDate(a.date) - parseDate(b.date)).forEach(t => {
+        if (t.type === "achat") {
+          const cost = t.quantity * t.unitPrice * t.conversionRate + (t.fees || 0) + (t.tff || 0);
+          const ex = origPositions.find(p => p.code === t.code);
+          if (ex) { ex.totalCost += cost; ex.quantity += t.quantity; ex.pru = ex.totalCost / ex.quantity; }
+          else origPositions.push({ id: crypto.randomUUID(), portfolioId: originalPortfolioId, code: t.code, name: t.name, quantity: t.quantity, totalCost: cost, pru: cost / t.quantity, currency: t.currency, sector: t.sector });
+        } else if (t.type === "vente") {
+          const ex = origPositions.find(p => p.code === t.code);
+          if (ex && ex.quantity >= t.quantity) {
+            const sale = t.quantity * t.unitPrice * t.conversionRate - (t.fees || 0);
+            const purchase = t.quantity * ex.pru;
+            const gainLoss = sale - purchase;
+            origClosed.push({ id: crypto.randomUUID(), portfolioId: originalPortfolioId, code: t.code, name: t.name, purchaseDate: t.date, saleDate: t.date, quantity: t.quantity, pru: ex.pru, averageSalePrice: sale / t.quantity, totalPurchase: purchase, totalSale: sale, gainLoss, gainLossPercent: (gainLoss / purchase) * 100, dividends: 0, sector: ex.sector });
+            const remaining = ex.quantity - t.quantity;
+            if (remaining === 0) origPositions.splice(origPositions.indexOf(ex), 1);
+            else { ex.quantity = remaining; ex.totalCost -= purchase; }
+          }
+        }
+      });
+      await deletePositionsByPortfolio(originalPortfolioId);
+      await deleteClosedPositionsByPortfolio(originalPortfolioId);
+      await bulkUpsertPositions(origPositions);
+      await bulkAddClosedPositions(origClosed);
+      await dbUpdatePortfolio(originalPortfolioId, { cash: recalcCash(origTxs) });
+
+      // 2. Recalc nouveau portefeuille (transactions existantes + transaction déplacée)
+      const newPortfolioTxs = [...(portfolioData[effectivePortfolioId]?.transactions ?? []), updated];
+      const newPortfolioPositions: DBPosition[] = [];
+      const newPortfolioClosed: DBClosedPosition[] = [];
+      newPortfolioTxs.filter(t => t.type === "achat" || t.type === "vente").sort((a, b) => {
+        const dateDiff = parseDate(a.date) - parseDate(b.date);
+        if (dateDiff !== 0) return dateDiff;
+        if (a.type === "achat" && b.type === "vente") return -1;
+        if (a.type === "vente" && b.type === "achat") return 1;
+        return 0;
+      }).forEach(t => {
+        if (t.type === "achat") {
+          const cost = t.quantity * t.unitPrice * t.conversionRate + (t.fees || 0) + (t.tff || 0);
+          const ex = newPortfolioPositions.find(p => p.code === t.code);
+          if (ex) { ex.totalCost += cost; ex.quantity += t.quantity; ex.pru = ex.totalCost / ex.quantity; }
+          else newPortfolioPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: t.code, name: t.name, quantity: t.quantity, totalCost: cost, pru: cost / t.quantity, currency: t.currency, sector: t.sector });
+        } else if (t.type === "vente") {
+          const ex = newPortfolioPositions.find(p => p.code === t.code);
+          if (ex && ex.quantity >= t.quantity) {
+            const sale = t.quantity * t.unitPrice * t.conversionRate - (t.fees || 0);
+            const purchase = t.quantity * ex.pru;
+            const gainLoss = sale - purchase;
+            const purchaseTx = newPortfolioTxs.filter(tx => tx.code === t.code && tx.type === "achat").sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+            const dividends = newPortfolioTxs.filter(tx => tx.code === t.code && tx.type === "dividende").reduce((sum, tx) => sum + (tx.unitPrice * tx.quantity * tx.conversionRate - (tx.tax || 0)), 0);
+            newPortfolioClosed.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: t.code, name: t.name, purchaseDate: purchaseTx?.date || t.date, saleDate: t.date, quantity: t.quantity, pru: ex.pru, averageSalePrice: sale / t.quantity, totalPurchase: purchase, totalSale: sale, gainLoss, gainLossPercent: (gainLoss / purchase) * 100, dividends, sector: ex.sector });
+            const remaining = ex.quantity - t.quantity;
+            if (remaining === 0) newPortfolioPositions.splice(newPortfolioPositions.indexOf(ex), 1);
+            else { ex.quantity = remaining; ex.totalCost -= purchase; }
+          }
+        }
+      });
+      await deletePositionsByPortfolio(effectivePortfolioId);
+      await deleteClosedPositionsByPortfolio(effectivePortfolioId);
+      await bulkUpsertPositions(newPortfolioPositions);
+      await bulkAddClosedPositions(newPortfolioClosed);
+      await dbUpdatePortfolio(effectivePortfolioId, { cash: recalcCash(newPortfolioTxs) });
+
+      await refreshData();
+      return;
+    }
+
+    const portfolioTransactions = portfolioData[effectivePortfolioId]?.transactions ?? [];
+    const updatedTransactions = portfolioTransactions.map(t =>
       t.id === updated.id ? updated : t
     );
 
@@ -644,7 +729,7 @@ export function PortfolioLayout() {
             const newQuantity = existing.quantity + transaction.quantity;
             existing.quantity = newQuantity; existing.totalCost = newTotalCost; existing.pru = newTotalCost / newQuantity;
           } else {
-            newPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
+            newPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
           }
         } else if (transaction.type === "vente") {
           const existing = newPositions.find(p => p.code === transaction.code);
@@ -657,7 +742,7 @@ export function PortfolioLayout() {
             const purchaseDate = new Date(purchaseTx?.date || transaction.date);
             const saleDate = new Date(transaction.date);
             const dividends = updatedTransactions.filter(t => t.code === transaction.code && t.type === "dividende" && new Date(t.date) >= purchaseDate && new Date(t.date) <= saleDate).reduce((sum, t) => sum + ((t.unitPrice * t.quantity * t.conversionRate) - (t.tax || 0)), 0);
-            newClosedPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, purchaseDate: purchaseTx?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existing.pru, averageSalePrice: totalSale / transaction.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existing.sector });
+            newClosedPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: transaction.code, name: transaction.name, purchaseDate: purchaseTx?.date || transaction.date, saleDate: transaction.date, quantity: transaction.quantity, pru: existing.pru, averageSalePrice: totalSale / transaction.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: (gainLoss / totalPurchase) * 100, dividends, sector: existing.sector });
             const newQuantity = existing.quantity - transaction.quantity;
             if (newQuantity === 0) newPositions.splice(newPositions.indexOf(existing), 1);
             else { existing.quantity = newQuantity; existing.totalCost -= totalPurchase; }
@@ -668,11 +753,11 @@ export function PortfolioLayout() {
     // Recalcul du cash depuis toutes les transactions mises à jour
     const newCash = recalcCash(updatedTransactions);
 
-    await deletePositionsByPortfolio(currentPortfolioId);
-    await deleteClosedPositionsByPortfolio(currentPortfolioId);
+    await deletePositionsByPortfolio(effectivePortfolioId);
+    await deleteClosedPositionsByPortfolio(effectivePortfolioId);
     await bulkUpsertPositions(newPositions);
     await bulkAddClosedPositions(newClosedPositions);
-    await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
+    await dbUpdatePortfolio(effectivePortfolioId, { cash: newCash });
     await refreshData();
   };
 

@@ -22,19 +22,23 @@ export type TransactionRow = {
   conversionRate: number;
   tax?: number | null;
   sector?: string | null;
+  portfolioId?: string;
 };
+
+type PortfolioOption = { id: string; name: string; code?: string };
 
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
 
   transaction: TransactionRow | null;
+  portfolios?: PortfolioOption[];
 
   // callback pour mettre à jour la ligne dans l’UI
   onSaved: (updated: TransactionRow) => void;
 };
 
-export function EditTransactionDialog({ open, onOpenChange, transaction, onSaved }: Props) {
+export function EditTransactionDialog({ open, onOpenChange, transaction, portfolios, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,31 +62,33 @@ export function EditTransactionDialog({ open, onOpenChange, transaction, onSaved
     setError(null);
 
     try {
-      const patch: Partial<TransactionRow> = {
+      const patch: Record<string, any> = {
         date: form.date,
         code: form.code?.toUpperCase(),
         name: form.name,
         type: form.type,
         quantity: Number(form.quantity) || 0,
-        unitPrice: Number(form.unitPrice) || 0,
+        unit_price: Number(form.unitPrice) || 0,
         fees: Number(form.fees) || 0,
         tff: Number(form.tff) || 0,
         currency: form.currency,
-        conversionRate: Number(form.conversionRate) || 1,
+        conversion_rate: Number(form.conversionRate) || 1,
         tax: form.type === "dividende" ? (form.tax ?? null) : null,
         sector: form.sector ?? null,
       };
 
-      const { data, error } = await supabase
+      if (form.portfolioId) {
+        patch.portfolio_id = form.portfolioId;
+      }
+
+      const { error } = await supabase
         .from("transactions")
         .update(patch)
-        .eq("id", form.id)
-        .select("*")
-        .single();
+        .eq("id", form.id);
 
       if (error) throw error;
 
-      onSaved(data as TransactionRow);
+      onSaved({ ...form, code: form.code?.toUpperCase() });
       onOpenChange(false);
     } catch (e: any) {
       setError(String(e?.message ?? e));
@@ -201,6 +207,22 @@ export function EditTransactionDialog({ open, onOpenChange, transaction, onSaved
             <Label>Secteur</Label>
             <Input value={form.sector ?? ""} onChange={e => set("sector", e.target.value)} />
           </div>
+
+          {portfolios && portfolios.length > 1 && (
+            <div className="space-y-1 md:col-span-2">
+              <Label>Portefeuille</Label>
+              <Select value={form.portfolioId ?? ""} onValueChange={v => set("portfolioId", v)}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un portefeuille" /></SelectTrigger>
+                <SelectContent>
+                  {portfolios.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}{p.code ? ` (${p.code})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         {error && <div className="text-sm text-red-500">{error}</div>}

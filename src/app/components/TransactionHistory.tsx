@@ -14,6 +14,8 @@ interface TransactionHistoryProps {
   onDeleteTransaction?: (id: string) => void;
   onEditTransaction?: (updated: Transaction) => Promise<void>;
   portfolioCurrency?: string;
+  portfolios?: { id: string; name: string; code?: string }[];
+  currentPortfolioId?: string;
 }
 
 type SortKey =
@@ -49,6 +51,8 @@ export function TransactionHistory({
   onDeleteTransaction,
   onEditTransaction,
   portfolioCurrency = "EUR",
+  portfolios,
+  currentPortfolioId,
 }: TransactionHistoryProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -229,6 +233,7 @@ export function TransactionHistory({
       conversionRate: tx.conversionRate,
       tax: (tx as any).tax ?? null,
       sector: (tx as any).sector ?? null,
+      portfolioId: (tx as any).portfolioId ?? currentPortfolioId ?? undefined,
     });
     setEditOpen(true);
   };
@@ -410,6 +415,7 @@ export function TransactionHistory({
               open={editOpen}
               onOpenChange={setEditOpen}
               transaction={editing}
+              portfolios={portfolios}
               onSaved={handleSaved}
             />
           </div>
