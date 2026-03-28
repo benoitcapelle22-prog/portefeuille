@@ -6,7 +6,7 @@ import { Badge } from "./ui/badge";
 import { Calculator, TrendingUp, Shield, Target } from "lucide-react";
 
 export function PositionSizeCalculator() {
-  const [capital, setCapital] = useState("16000.00");
+  const [capital, setCapital] = useState(() => localStorage.getItem("psc_capital") ?? "16000.00");
   const [buyPrice, setBuyPrice] = useState("7.3");
   const [stopLoss, setStopLoss] = useState("6.76");
   const [riskPercent, setRiskPercent] = useState("0.50");
@@ -230,7 +230,7 @@ export function PositionSizeCalculator() {
                 type="number"
                 step="0.01"
                 value={capital}
-                onChange={(e) => setCapital(e.target.value)}
+                onChange={(e) => { setCapital(e.target.value); localStorage.setItem("psc_capital", e.target.value); }}
                 className="h-12 text-right font-bold text-lg bg-cyan-100 dark:bg-cyan-900 border-2 border-cyan-300 dark:border-cyan-700"
               />
             </div>
