@@ -8,6 +8,8 @@ interface ExchangeRates {
   CHF: number;
   JPY: number;
   CAD: number;
+  DKK: number;
+  SEK: number;
 }
 
 // Taux de change par défaut (fallback en cas d'échec API)
@@ -18,6 +20,8 @@ const DEFAULT_RATES: ExchangeRates = {
   CHF: 1.05,
   JPY: 0.0062,
   CAD: 0.68,
+  DKK: 0.134,
+  SEK: 0.087,
 };
 
 export function useExchangeRates() {
@@ -60,6 +64,8 @@ if (cached) {
           CHF: data.rates.CHF ? 1 / data.rates.CHF : DEFAULT_RATES.CHF,
           JPY: data.rates.JPY ? 1 / data.rates.JPY : DEFAULT_RATES.JPY,
           CAD: data.rates.CAD ? 1 / data.rates.CAD : DEFAULT_RATES.CAD,
+          DKK: data.rates.DKK ? 1 / data.rates.DKK : DEFAULT_RATES.DKK,
+          SEK: data.rates.SEK ? 1 / data.rates.SEK : DEFAULT_RATES.SEK,
         };
 
         setRates(fetchedRates);
