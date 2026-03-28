@@ -5,6 +5,7 @@ interface ExchangeRates {
   EUR: number;
   USD: number;
   GBP: number;
+  GBX: number;
   CHF: number;
   JPY: number;
   CAD: number;
@@ -12,16 +13,17 @@ interface ExchangeRates {
   SEK: number;
 }
 
-// Taux de change par défaut (fallback en cas d'échec API)
+// Taux de change par défaut — convention : 1 EUR = ? devise
 const DEFAULT_RATES: ExchangeRates = {
   EUR: 1,
-  USD: 0.92,
-  GBP: 1.17,
-  CHF: 1.05,
-  JPY: 0.0062,
-  CAD: 0.68,
-  DKK: 0.134,
-  SEK: 0.087,
+  USD: 1.09,
+  GBP: 0.86,
+  GBX: 86,   // 1 EUR = 86 pence (= 0.86 GBP × 100)
+  CHF: 0.95,
+  JPY: 162,
+  CAD: 1.48,
+  DKK: 7.46,
+  SEK: 11.5,
 };
 
 export function useExchangeRates() {
@@ -57,15 +59,18 @@ if (cached) {
 
         // L'API retourne les taux depuis EUR vers d'autres devises
         // On doit inverser pour obtenir les taux vers EUR
+        // L'API retourne déjà les taux depuis EUR : 1 EUR = ? devise
+        const gbp = data.rates.GBP || DEFAULT_RATES.GBP;
         const fetchedRates: ExchangeRates = {
           EUR: 1,
-          USD: data.rates.USD ? 1 / data.rates.USD : DEFAULT_RATES.USD,
-          GBP: data.rates.GBP ? 1 / data.rates.GBP : DEFAULT_RATES.GBP,
-          CHF: data.rates.CHF ? 1 / data.rates.CHF : DEFAULT_RATES.CHF,
-          JPY: data.rates.JPY ? 1 / data.rates.JPY : DEFAULT_RATES.JPY,
-          CAD: data.rates.CAD ? 1 / data.rates.CAD : DEFAULT_RATES.CAD,
-          DKK: data.rates.DKK ? 1 / data.rates.DKK : DEFAULT_RATES.DKK,
-          SEK: data.rates.SEK ? 1 / data.rates.SEK : DEFAULT_RATES.SEK,
+          USD: data.rates.USD || DEFAULT_RATES.USD,
+          GBP: gbp,
+          GBX: gbp * 100,  // 1 EUR = ? pence = GBP × 100
+          CHF: data.rates.CHF || DEFAULT_RATES.CHF,
+          JPY: data.rates.JPY || DEFAULT_RATES.JPY,
+          CAD: data.rates.CAD || DEFAULT_RATES.CAD,
+          DKK: data.rates.DKK || DEFAULT_RATES.DKK,
+          SEK: data.rates.SEK || DEFAULT_RATES.SEK,
         };
 
         setRates(fetchedRates);
@@ -109,7 +114,7 @@ if (cached) {
     return () => clearInterval(interval);
   }, []);
 
-  // Fonction pour obtenir le taux de conversion d'une devise vers EUR
+  // Retourne le taux de change : 1 EUR = ? devise
   const getConversionRate = (currency: string): number => {
     return rates[currency as keyof ExchangeRates] || 1;
   };

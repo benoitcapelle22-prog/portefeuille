@@ -39,7 +39,7 @@ export interface Position {
   quantity: number;
   totalCost: number;
   pru: number;
-  currency?: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
+  currency?: "EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
   currentPrice?: number;
   manualCurrentPrice?: number;
   totalValue?: number;
@@ -323,9 +323,36 @@ export function CurrentPositions({
   const hasActiveFilters = searchFilter !== "" || endDate !== "";
   const resetFilters = () => { setSearchFilter(""); setEndDate(""); };
 
+  // ── Helper : valeurs converties en devise portefeuille ───────
+  const getPositionEurValues = (pos: Position) => {
+    const posCurrency = pos.currency || portfolioCurrency;
+    const isForeign = posCurrency !== portfolioCurrency;
+
+    if (!isForeign) {
+      return {
+        totalValueConverted: pos.totalValue,
+        totalValueRaw: undefined as number | undefined,
+        latentGainLossConverted: pos.latentGainLoss,
+        latentGainLossPercentConverted: pos.latentGainLossPercent,
+      };
+    }
+
+    // getConversionRate retourne "1 EUR = ? devise", donc pour convertir devise → EUR on divise
+    const convRate = getConversionRate(posCurrency);
+    const totalValueRaw = pos.currentPrice !== undefined ? pos.quantity * pos.currentPrice : undefined;
+    const totalValueConverted = totalValueRaw !== undefined && convRate > 0 ? totalValueRaw / convRate : undefined;
+    const latentGainLossConverted = totalValueConverted !== undefined ? totalValueConverted - pos.totalCost : undefined;
+    const latentGainLossPercentConverted =
+      latentGainLossConverted !== undefined && pos.totalCost > 0
+        ? (latentGainLossConverted / pos.totalCost) * 100
+        : undefined;
+
+    return { totalValueConverted, totalValueRaw, latentGainLossConverted, latentGainLossPercentConverted };
+  };
+
   const totalInvested = filteredPositions.reduce((sum, pos) => sum + pos.totalCost, 0);
-  const totalValue = filteredPositions.reduce((sum, pos) => sum + (pos.totalValue || 0), 0);
-  const totalLatentGainLoss = totalValue - totalInvested;
+  const totalValue = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).totalValueConverted || 0), 0);
+  const totalLatentGainLoss = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).latentGainLossConverted || 0), 0);
   const totalLatentGainLossPercent = totalInvested > 0 ? (totalLatentGainLoss / totalInvested) * 100 : 0;
   const totalPortfolio = totalValue + cash;
   const totalPortfolioInEUR = portfolioCurrency === "USD" ? totalPortfolio * getConversionRate("USD") : totalPortfolio;
@@ -465,19 +492,34 @@ export function CurrentPositions({
 
                 {sortedPositions.map((position) => {
                   const positionCurrency = position.currency || portfolioCurrency;
+                  const isForeign = positionCurrency !== portfolioCurrency;
                   const risk = getRisk(position);
                   const riskPercent = getRiskPercent(position);
                   const sym = (position.code || "").trim().toUpperCase();
                   const hasLivePrice = quotesBySymbol[sym]?.price != null && position.manualCurrentPrice === undefined;
-                  const latentVal = position.latentGainLoss ?? 0;
-                  const latentPct = position.latentGainLossPercent;
+
+                  const { totalValueConverted, totalValueRaw, latentGainLossConverted, latentGainLossPercentConverted } = getPositionEurValues(position);
+                  const latentVal = latentGainLossConverted ?? 0;
+                  const latentPct = latentGainLossPercentConverted;
 
                   return (
                     <TableRow key={`${position.portfolioCode || ""}-${position.code}`}>
                       {hasPortfolioCodeColumn && (
                         <TableCell className="font-medium">{position.portfolioCode || "-"}</TableCell>
                       )}
-                      <TableCell className="font-medium">{position.code}</TableCell>
+
+                      {/* Code + badge devise si étrangère */}
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-1.5">
+                          {position.code}
+                          {isForeign && (
+                            <span className="bg-blue-100 text-blue-700 text-xs px-1.5 rounded-full dark:bg-blue-900/40 dark:text-blue-300">
+                              {positionCurrency}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+
                       <TableCell>{position.name}</TableCell>
                       {showSector && <TableCell>{position.sector}</TableCell>}
                       {showCurrency && <TableCell className="text-center">{positionCurrency}</TableCell>}
@@ -491,10 +533,10 @@ export function CurrentPositions({
                         }).format(position.pru)}
                       </TableCell>
 
-                      {/* Montant d'entrée — avant Cours actuel */}
+                      {/* Montant d'entrée */}
                       <TableCell className="text-right">{formatCurrency(position.totalCost, portfolioCurrency)}</TableCell>
 
-                      {/* Cours actuel */}
+                      {/* Cours actuel + label live · DEVISE */}
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-0.5">
                           <PriceInput
@@ -503,17 +545,26 @@ export function CurrentPositions({
                           />
                           {hasLivePrice && (
                             <span className="text-[10px] text-muted-foreground tabular-nums">
-                              live
+                              live{isForeign ? ` · ${positionCurrency}` : ""}
                             </span>
                           )}
                         </div>
                       </TableCell>
 
-                      <TableCell className="text-right">{formatCurrency(position.totalValue, portfolioCurrency)}</TableCell>
+                      {/* Valeur actuelle : EUR + ligne secondaire devise action si étrangère */}
+                      <TableCell className="text-right">
+                        {formatCurrency(totalValueConverted, portfolioCurrency)}
+                        {isForeign && totalValueRaw !== undefined && (
+                          <div className="text-xs text-muted-foreground">
+                            {new Intl.NumberFormat("fr-FR", { style: "currency", currency: positionCurrency, maximumFractionDigits: 2 }).format(totalValueRaw)}
+                          </div>
+                        )}
+                      </TableCell>
 
+                      {/* +/- Value latente convertie */}
                       <TableCell className="text-right whitespace-nowrap">
                         <div className={latentVal >= 0 ? "text-green-600" : "text-red-600"}>
-                          {formatCurrency(position.latentGainLoss, portfolioCurrency)}
+                          {formatCurrency(latentGainLossConverted, portfolioCurrency)}
                         </div>
                         <div className="text-xs text-muted-foreground">{formatPercent(latentPct)}</div>
                       </TableCell>

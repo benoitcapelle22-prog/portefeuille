@@ -18,7 +18,7 @@ export interface Transaction {
   unitPrice: number;
   fees: number;
   tff: number;
-  currency: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
+  currency: "EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
   conversionRate: number;
   tax?: number;
   portfolioCode?: string;
@@ -42,7 +42,7 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
   const [unitPrice, setUnitPrice] = useState("");
   const [fees, setFees] = useState("");
   const [tff, setTff] = useState("");
-  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK">(
+  const [currency, setCurrency] = useState<"EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK">(
     currentPortfolio?.currency || "EUR"
   );
   const [conversionRate, setConversionRate] = useState("");

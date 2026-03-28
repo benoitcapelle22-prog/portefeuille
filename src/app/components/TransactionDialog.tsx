@@ -29,7 +29,7 @@ const SECTOR_MAP: Record<string, string> = {
   "Telecom": "Télécommunications", "Media": "Télécommunications",
 };
 
-type Currency = "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
+type Currency = "EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
 
 interface TransactionDialogProps {
   open: boolean;
@@ -58,8 +58,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function getCurrencySymbol(curr: string) {
   switch (curr) {
     case "EUR": return "€";  case "USD": return "$";  case "GBP": return "£";
-    case "JPY": return "¥";  case "CAD": return "CA$"; case "CHF": return "CHF";
-    case "DKK": case "SEK": return "kr";
+    case "GBX": return "p";  case "JPY": return "¥";  case "CAD": return "CA$";
+    case "CHF": return "CHF"; case "DKK": case "SEK": return "kr";
     default: return curr;
   }
 }
@@ -129,12 +129,13 @@ export function TransactionDialog({
   useEffect(() => {
     if (!isForeignCurrency) { setConversionRate("1"); rateTouchedRef.current = false; return; }
     if (rateTouchedRef.current) return; // ne pas écraser si l'utilisateur a saisi manuellement
-    // Calcul : 1 devise_action = ? devise_portefeuille
-    // getConversionRate retourne "1 X = ? EUR"
-    const rateActionToEur = getConversionRate(currency);        // 1 action_currency → EUR
-    const ratePortfolioToEur = getConversionRate(portfolioCurrency); // 1 portfolio_currency → EUR
-    if (ratePortfolioToEur > 0) {
-      const rate = rateActionToEur / ratePortfolioToEur;
+    // getConversionRate retourne "1 EUR = ? devise"
+    // Pour obtenir "1 devise_action = ? devise_portefeuille" :
+    //   1 devise_action = (1 / rate_action) EUR = (1 / rate_action) * rate_portfolio devise_portefeuille
+    const rateCurrency = getConversionRate(currency);          // 1 EUR = ? devise_action
+    const ratePortfolio = getConversionRate(portfolioCurrency); // 1 EUR = ? devise_portefeuille
+    if (ratePortfolio > 0) {
+      const rate = rateCurrency / ratePortfolio;
       setConversionRate(rate.toFixed(4));
     }
   }, [currency, portfolioCurrency, isForeignCurrency, getConversionRate]);
@@ -151,10 +152,10 @@ export function TransactionDialog({
           fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
           fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
-        if (tickerRes?.price != null) setUnitPrice(String(tickerRes.price));
+        if (tickerRes?.price != null) setUnitPrice(Number(tickerRes.price).toFixed(4));
         if (tickerRes?.currency) {
           const apiCur = tickerRes.currency.toUpperCase() as Currency;
-          const known: Currency[] = ["EUR", "USD", "GBP", "CHF", "JPY", "CAD", "DKK", "SEK"];
+          const known: Currency[] = ["EUR", "USD", "GBP", "GBX", "CHF", "JPY", "CAD", "DKK", "SEK"];
           if (known.includes(apiCur)) { setCurrency(apiCur); rateTouchedRef.current = false; }
         }
         const fetchedName = tickerRes?.name ?? searchRes?.name ?? null;
@@ -191,13 +192,14 @@ export function TransactionDialog({
   const tffVal   = autoTFF ? (parseFloat(tff) || 0) : 0;
 
   const montantBrutDevise    = qty * price;
-  const montantBrutConverti  = montantBrutDevise * convRate;
+  // convRate = "1 EUR = ? devise" → pour convertir devise → EUR on divise
+  const montantBrutConverti  = convRate > 0 ? montantBrutDevise / convRate : montantBrutDevise;
   const montantTotal = type === "achat" ? montantBrutConverti + feesVal + tffVal : montantBrutConverti - feesVal;
   const pruOuNet = qty > 0 ? montantTotal / qty : 0;
 
   function computeFees() {
     if (!effectivePortfolio?.fees.defaultFeesPercent || !quantity || !unitPrice) return 0;
-    const base = qty * price * convRate;
+    const base = convRate > 0 ? qty * price / convRate : qty * price;
     const fromPct = base * effectivePortfolio.fees.defaultFeesPercent / 100;
     return Math.max(fromPct, effectivePortfolio.fees.defaultFeesMin || 0);
   }
@@ -209,7 +211,7 @@ export function TransactionDialog({
 
   const feesDetail = () => {
     if (!effectivePortfolio?.fees.defaultFeesPercent || !quantity || !unitPrice) return null;
-    const base = qty * price * convRate;
+    const base = convRate > 0 ? qty * price / convRate : qty * price;
     const fromPct = base * effectivePortfolio.fees.defaultFeesPercent / 100;
     const min = effectivePortfolio.fees.defaultFeesMin || 0;
     return { base: base.toFixed(2), percent: effectivePortfolio.fees.defaultFeesPercent, fromPct: fromPct.toFixed(2), min, isMin: fromPct < min };
@@ -224,12 +226,14 @@ export function TransactionDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !name || !quantity || !unitPrice) { alert("Veuillez remplir tous les champs obligatoires"); return; }
+    // PortfolioLayout utilise unitPrice * conversionRate → on stocke l'inverse (1 devise = ? EUR)
+    const storedConvRate = isForeignCurrency && convRate > 0 ? 1 / convRate : 1;
     onAddTransaction({
       date, code: code.toUpperCase(), name, type,
       quantity: qty, unitPrice: price,
       fees: feesVal,
       tff: showTFF && autoTFF ? tffVal : 0,
-      currency, conversionRate: convRate,
+      currency, conversionRate: storedConvRate,
       tax: 0,
       sector: sector || undefined,
     }, initialData?.portfolioId);
@@ -314,6 +318,7 @@ export function TransactionDialog({
                   <SelectItem value="EUR">EUR €</SelectItem>
                   <SelectItem value="USD">USD $</SelectItem>
                   <SelectItem value="GBP">GBP £</SelectItem>
+                  <SelectItem value="GBX">GBX p (pence)</SelectItem>
                   <SelectItem value="CHF">CHF</SelectItem>
                   <SelectItem value="JPY">JPY ¥</SelectItem>
                   <SelectItem value="CAD">CAD $</SelectItem>
@@ -332,7 +337,7 @@ export function TransactionDialog({
             {isForeignCurrency && (
               <div className="space-y-1 col-span-4">
                 <Label htmlFor="conversionRate" className="text-xs">
-                  Taux de change — 1 {currency} = ? {portfolioCurrency}
+                  Taux de change — 1 {portfolioCurrency} = ? {currency}
                 </Label>
                 <Input id="conversionRate" type="number" step="0.0001" placeholder="1.0000" value={conversionRate}
                   onChange={e => { setConversionRate(e.target.value); rateTouchedRef.current = true; }}
@@ -399,7 +404,7 @@ export function TransactionDialog({
                 </>
               )}
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Frais {type === "achat" ? "+" : "−"}</span>
+                <span className="text-muted-foreground">Frais</span>
                 <span className="font-medium">{feesVal.toFixed(2)} {portSymbol}</span>
               </div>
               {showTFF && autoTFF && tffVal > 0 && (
