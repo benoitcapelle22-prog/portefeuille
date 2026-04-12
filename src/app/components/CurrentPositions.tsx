@@ -152,7 +152,7 @@ export function CurrentPositions({
     [positions]
   );
 
-  const { quotesBySymbol, loading, error, refresh, updatedAt } = useQuotes(symbols, 120_000);
+  const { quotesBySymbol, loading, error, refresh, updatedAt } = useQuotes(symbols);
 
   const updatedAtLabel = useMemo(() => {
     if (!updatedAt) return null;

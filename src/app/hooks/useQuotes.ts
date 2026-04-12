@@ -14,7 +14,27 @@ function uniqSymbols(symbols: string[]) {
   return Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
 }
 
-export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResult {
+/** Retourne le délai en ms avant la prochaine synchronisation (12h ou 18h) */
+function msUntilNextRefresh(): number {
+  const now = new Date();
+  const scheduleHours = [12, 18];
+
+  for (const hour of scheduleHours) {
+    const next = new Date(now);
+    next.setHours(hour, 0, 0, 0);
+    if (next.getTime() > now.getTime()) {
+      return next.getTime() - now.getTime();
+    }
+  }
+
+  // Les deux créneaux sont passés → prochain à 12h demain
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(12, 0, 0, 0);
+  return tomorrow.getTime() - now.getTime();
+}
+
+export function useQuotes(symbols: string[]): UseQuotesResult {
   const normalized = useMemo(() => uniqSymbols(symbols), [symbols.join("|")]);
   const [quotesBySymbol, setQuotesBySymbol] = useState<Record<string, Quote>>({});
   const [loading, setLoading] = useState(false);
@@ -58,16 +78,24 @@ export function useQuotes(symbols: string[], refreshMs = 60_000): UseQuotesResul
   useEffect(() => {
     refresh();
 
-    const id = window.setInterval(() => {
-      refresh();
-    }, refreshMs);
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const scheduleNext = () => {
+      const ms = msUntilNextRefresh();
+      timeoutId = setTimeout(() => {
+        refresh();
+        scheduleNext();
+      }, ms);
+    };
+
+    scheduleNext();
 
     return () => {
-      window.clearInterval(id);
+      clearTimeout(timeoutId);
       abortRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalized.join(","), refreshMs]);
+  }, [normalized.join(",")]);
 
   return { quotesBySymbol, loading, error, refresh, updatedAt };
 }

@@ -21,7 +21,7 @@ export function DashboardPage() {
     () => Array.from(new Set(currentData.positions.map((p) => (p.code || "").trim().toUpperCase()).filter(Boolean))),
     [currentData.positions]
   );
-  const { quotesBySymbol } = useQuotes(symbols, 120_000);
+  const { quotesBySymbol } = useQuotes(symbols);
 
   // Enrichir les positions avec les cours live
   const positionsWithPrices = useMemo(() => {
