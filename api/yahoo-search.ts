@@ -16,35 +16,17 @@ const HEADERS = {
   "Referer": "https://finance.yahoo.com/",
 };
 
-async function fetchSector(symbol: string): Promise<string | null> {
-  // Liste d'endpoints à essayer dans l'ordre
-  const urls = [
-    `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=assetProfile&lang=en-US&region=US`,
-    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=assetProfile&lang=en-US&region=US`,
-    `https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=assetProfile&lang=en-US&region=US`,
-  ];
-
-  for (const url of urls) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        console.warn(`quoteSummary ${res.status} for ${symbol} at ${url}`);
-        continue;
-      }
-
-      const data = await res.json();
-      const sector: string | null = data?.quoteSummary?.result?.[0]?.assetProfile?.sector ?? null;
-      if (sector) return sector;
-    } catch (e) {
-      console.warn(`quoteSummary error for ${symbol}:`, e);
-    }
+async function fetchWithTimeout(url: string, ms = 6000): Promise<Response | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
+    return res;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -63,29 +45,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  let name: string | null = null;
+  let sector: string | null = null;
+  let yahooSymbol = q;
+
   try {
-    const controller1 = new AbortController();
-    const timeout1 = setTimeout(() => controller1.abort(), 6000);
-
-    const searchUrl = `https://query1.finance.yahoo.com/v8/finance/search?q=${encodeURIComponent(q)}&lang=en-US&region=US&quotesCount=5&newsCount=0`;
-    const searchRes = await fetch(searchUrl, { headers: HEADERS, signal: controller1.signal });
-    clearTimeout(timeout1);
-
-    if (!searchRes.ok) {
-      res.status(200).json({ symbol: q, name: null, sector: null });
-      return;
+    // ── 1. Search : nom + symbole Yahoo exact ─────────────────────
+    const searchRes = await fetchWithTimeout(
+      `https://query1.finance.yahoo.com/v8/finance/search?q=${encodeURIComponent(q)}&lang=en-US&region=US&quotesCount=5&newsCount=0`
+    );
+    if (searchRes?.ok) {
+      const searchData = await searchRes.json();
+      const quotes: any[] = searchData?.quotes ?? [];
+      const exact = quotes.find(item => item.symbol?.toUpperCase() === q);
+      const best = exact ?? quotes[0];
+      name = best?.longname ?? best?.shortname ?? null;
+      yahooSymbol = best?.symbol ?? q;
+      // Secteur parfois présent directement dans la recherche
+      sector = best?.sector ?? null;
     }
 
-    const searchData = await searchRes.json();
-    const quotes: any[] = searchData?.quotes ?? [];
-    const exact = quotes.find(item => item.symbol?.toUpperCase() === q);
-    const best = exact ?? quotes[0];
-    const name = best?.longname ?? best?.shortname ?? null;
-    const yahooSymbol = best?.symbol ?? q;
+    // ── 2. v7/finance/quote : secteur direct (sans auth) ─────────
+    if (!sector) {
+      const quoteRes = await fetchWithTimeout(
+        `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(yahooSymbol)}&fields=sector,longName,shortName`
+      );
+      if (quoteRes?.ok) {
+        const quoteData = await quoteRes.json();
+        const item = quoteData?.quoteResponse?.result?.[0];
+        sector = item?.sector ?? null;
+        if (!name) name = item?.longName ?? item?.shortName ?? null;
+      }
+    }
 
-    // Secteur : d'abord dans les résultats de recherche, sinon via quoteSummary
-    const sectorFromSearch: string | null = best?.sector ?? null;
-    const sector = sectorFromSearch ?? await fetchSector(yahooSymbol);
+    // ── 3. quoteSummary assetProfile : fallback ───────────────────
+    if (!sector) {
+      for (const base of ["query2", "query1"]) {
+        const summaryRes = await fetchWithTimeout(
+          `https://${base}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol)}?modules=assetProfile&lang=en-US&region=US`
+        );
+        if (summaryRes?.ok) {
+          const summaryData = await summaryRes.json();
+          sector = summaryData?.quoteSummary?.result?.[0]?.assetProfile?.sector ?? null;
+          if (sector) break;
+        } else {
+          console.warn(`quoteSummary ${summaryRes?.status} for ${yahooSymbol} via ${base}`);
+        }
+      }
+    }
+
+    console.log(`yahoo-search ${q}: name=${name} sector=${sector}`);
 
     const result: SearchResult = { symbol: q, name, sector };
     if (name) resultCache.set(q, { result, expiresAt: now + CACHE_TTL_MS });
@@ -94,6 +103,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(200).json(result);
   } catch (e: any) {
     console.error(`yahoo-search error for ${q}:`, e?.message);
-    res.status(200).json({ symbol: q, name: null, sector: null });
+    res.status(200).json({ symbol: q, name, sector });
   }
 }

@@ -186,9 +186,8 @@ export function TransactionDialog({
     setFetchLoading(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const [tickerRes, fmpRes, yahooRes] = await Promise.all([
+        const [tickerRes, searchRes] = await Promise.all([
           fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
           fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
         if (tickerRes?.price != null) setUnitPrice(Number(tickerRes.price).toFixed(4));
@@ -197,10 +196,9 @@ export function TransactionDialog({
           const known: Currency[] = ["EUR", "USD", "GBP", "GBX", "CHF", "JPY", "CAD", "DKK", "SEK"];
           if (known.includes(apiCur)) { setCurrency(apiCur); rateTouchedRef.current = false; }
         }
-        const fetchedName = tickerRes?.name ?? fmpRes?.name ?? yahooRes?.name ?? null;
+        const fetchedName = tickerRes?.name ?? searchRes?.name ?? null;
         if (fetchedName && !nameTouchedRef.current) setName(fetchedName);
-        // FMP (stock-search) en priorité pour le secteur, Yahoo en fallback
-        const fetchedSector = fmpRes?.sector ?? yahooRes?.sector ?? null;
+        const fetchedSector = searchRes?.sector ?? null;
         if (fetchedSector && !sector) {
           const mapped = SECTOR_MAP[fetchedSector] ?? fetchedSector;
           setSector(SECTORS.includes(mapped) ? mapped : "");
