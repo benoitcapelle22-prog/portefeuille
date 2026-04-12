@@ -11,22 +11,55 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  "Accept": "application/json, text/plain, */*",
-  "Accept-Language": "en-US,en;q=0.9",
+  "Accept": "application/json",
+  "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8",
   "Referer": "https://finance.yahoo.com/",
 };
 
-async function fetchWithTimeout(url: string, ms = 6000): Promise<Response | null> {
+async function fetchWithTimeout(url: string, ms = 7000): Promise<Response | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ms);
   try {
-    const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
-    return res;
+    return await fetch(url, { headers: HEADERS, signal: controller.signal });
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// Nom via Yahoo Finance chart (même endpoint que ticker.ts — fonctionne sans auth)
+async function fetchNameFromChart(symbol: string): Promise<string | null> {
+  const res = await fetchWithTimeout(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`
+  );
+  if (!res?.ok) return null;
+  const data = await res.json();
+  const meta = data?.chart?.result?.[0]?.meta;
+  return meta?.longName ?? meta?.shortName ?? null;
+}
+
+// Secteur via Alpha Vantage (clé gratuite : alphavantage.co)
+async function fetchSectorFromAlphaVantage(symbol: string): Promise<{ name: string | null; sector: string | null }> {
+  const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+  if (!apiKey) return { name: null, sector: null };
+
+  const res = await fetchWithTimeout(
+    `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`
+  );
+  if (!res?.ok) return { name: null, sector: null };
+  const data = await res.json();
+
+  // Alpha Vantage retourne `{"Information": "..."}` si quota dépassé
+  if (data?.Information || data?.Note) {
+    console.warn("Alpha Vantage quota dépassé ou note:", data.Information ?? data.Note);
+    return { name: null, sector: null };
+  }
+
+  return {
+    name: data?.Name ?? null,
+    sector: data?.Sector ?? null,
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -45,64 +78,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  let name: string | null = null;
-  let sector: string | null = null;
-  let yahooSymbol = q;
+  // Appels en parallèle : chart Yahoo (nom) + Alpha Vantage (nom + secteur)
+  const [chartName, avData] = await Promise.all([
+    fetchNameFromChart(q),
+    fetchSectorFromAlphaVantage(q),
+  ]);
 
-  try {
-    // ── 1. Search : nom + symbole Yahoo exact ─────────────────────
-    const searchRes = await fetchWithTimeout(
-      `https://query1.finance.yahoo.com/v8/finance/search?q=${encodeURIComponent(q)}&lang=en-US&region=US&quotesCount=5&newsCount=0`
-    );
-    if (searchRes?.ok) {
-      const searchData = await searchRes.json();
-      const quotes: any[] = searchData?.quotes ?? [];
-      const exact = quotes.find(item => item.symbol?.toUpperCase() === q);
-      const best = exact ?? quotes[0];
-      name = best?.longname ?? best?.shortname ?? null;
-      yahooSymbol = best?.symbol ?? q;
-      // Secteur parfois présent directement dans la recherche
-      sector = best?.sector ?? null;
-    }
+  const name = avData.name ?? chartName;
+  const sector = avData.sector ?? null;
 
-    // ── 2. v7/finance/quote : secteur direct (sans auth) ─────────
-    if (!sector) {
-      const quoteRes = await fetchWithTimeout(
-        `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(yahooSymbol)}&fields=sector,longName,shortName`
-      );
-      if (quoteRes?.ok) {
-        const quoteData = await quoteRes.json();
-        const item = quoteData?.quoteResponse?.result?.[0];
-        sector = item?.sector ?? null;
-        if (!name) name = item?.longName ?? item?.shortName ?? null;
-      }
-    }
+  console.log(`yahoo-search ${q}: name=${name} sector=${sector}`);
 
-    // ── 3. quoteSummary assetProfile : fallback ───────────────────
-    if (!sector) {
-      for (const base of ["query2", "query1"]) {
-        const summaryRes = await fetchWithTimeout(
-          `https://${base}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol)}?modules=assetProfile&lang=en-US&region=US`
-        );
-        if (summaryRes?.ok) {
-          const summaryData = await summaryRes.json();
-          sector = summaryData?.quoteSummary?.result?.[0]?.assetProfile?.sector ?? null;
-          if (sector) break;
-        } else {
-          console.warn(`quoteSummary ${summaryRes?.status} for ${yahooSymbol} via ${base}`);
-        }
-      }
-    }
+  const result: SearchResult = { symbol: q, name, sector };
+  if (name) resultCache.set(q, { result, expiresAt: now + CACHE_TTL_MS });
 
-    console.log(`yahoo-search ${q}: name=${name} sector=${sector}`);
-
-    const result: SearchResult = { symbol: q, name, sector };
-    if (name) resultCache.set(q, { result, expiresAt: now + CACHE_TTL_MS });
-
-    res.setHeader("Cache-Control", "s-maxage=86400");
-    res.status(200).json(result);
-  } catch (e: any) {
-    console.error(`yahoo-search error for ${q}:`, e?.message);
-    res.status(200).json({ symbol: q, name, sector });
-  }
+  res.setHeader("Cache-Control", "s-maxage=86400");
+  res.status(200).json(result);
 }
