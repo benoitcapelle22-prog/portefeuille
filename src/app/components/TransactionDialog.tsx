@@ -76,7 +76,7 @@ function getCurrencySymbol(curr: string) {
 }
 
 export function TransactionDialog({
-  open, onOpenChange, onAddTransaction, currentPortfolio, portfolios, initialData,
+  open, onOpenChange, onAddTransaction, onEditTransaction, currentPortfolio, portfolios, initialData,
 }: TransactionDialogProps) {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [code, setCode] = useState("");

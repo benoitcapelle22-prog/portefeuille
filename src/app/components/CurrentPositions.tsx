@@ -92,13 +92,21 @@ function PriceInput({
   onChange: (v: number | undefined) => void;
 }) {
   const [raw, setRaw] = useState(value !== undefined ? String(value) : "");
+  const committedRef = useRef(value);
 
   useEffect(() => {
-    const parsed = raw === "" || raw === "." ? undefined : parseFloat(raw);
-    if (parsed !== value) {
+    // Ne synchroniser depuis le parent que si la valeur change en dehors de notre propre saisie
+    if (value !== committedRef.current) {
+      committedRef.current = value;
       setRaw(value !== undefined ? String(value) : "");
     }
   }, [value]);
+
+  const commit = () => {
+    const parsed = raw === "" || raw === "." ? undefined : parseFloat(raw);
+    committedRef.current = parsed;
+    onChange(parsed);
+  };
 
   return (
     <input
@@ -106,15 +114,13 @@ function PriceInput({
       value={raw}
       onKeyDown={(e) => {
         if (e.key === ",") e.preventDefault();
+        if (e.key === "Enter") { commit(); (e.target as HTMLInputElement).blur(); }
       }}
       onChange={(e) => {
         const val = e.target.value.replace(",", ".");
-        if (/^[\d]*\.?[\d]*$/.test(val)) {
-          setRaw(val);
-          const parsed = val === "" || val === "." ? undefined : parseFloat(val);
-          onChange(parsed);
-        }
+        if (/^[\d]*\.?[\d]*$/.test(val)) setRaw(val);
       }}
+      onBlur={commit}
       className="w-full border rounded px-2 py-1 text-sm text-right bg-background"
     />
   );
