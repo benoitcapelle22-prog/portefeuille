@@ -92,19 +92,17 @@ function PriceInput({
   onChange: (v: number | undefined) => void;
 }) {
   const [raw, setRaw] = useState(value !== undefined ? String(value) : "");
-  const committedRef = useRef(value);
+  const focusedRef = useRef(false);
 
   useEffect(() => {
-    // Ne synchroniser depuis le parent que si la valeur change en dehors de notre propre saisie
-    if (value !== committedRef.current) {
-      committedRef.current = value;
+    if (!focusedRef.current) {
       setRaw(value !== undefined ? String(value) : "");
     }
   }, [value]);
 
   const commit = () => {
+    focusedRef.current = false;
     const parsed = raw === "" || raw === "." ? undefined : parseFloat(raw);
-    committedRef.current = parsed;
     onChange(parsed);
   };
 
@@ -112,6 +110,7 @@ function PriceInput({
     <input
       type="text"
       value={raw}
+      onFocus={() => { focusedRef.current = true; }}
       onKeyDown={(e) => {
         if (e.key === ",") e.preventDefault();
         if (e.key === "Enter") { commit(); (e.target as HTMLInputElement).blur(); }
