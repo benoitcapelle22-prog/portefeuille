@@ -91,33 +91,29 @@ function PriceInput({
   value: number | undefined;
   onChange: (v: number | undefined) => void;
 }) {
-  const [raw, setRaw] = useState(value !== undefined ? String(value) : "");
-  const focusedRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // Synchronise la valeur externe uniquement quand le champ n'est pas actif
   useEffect(() => {
-    if (!focusedRef.current) {
-      setRaw(value !== undefined ? String(value) : "");
+    if (inputRef.current && document.activeElement !== inputRef.current) {
+      inputRef.current.value = value !== undefined ? String(value) : "";
     }
   }, [value]);
 
   const commit = () => {
-    focusedRef.current = false;
-    const parsed = raw === "" || raw === "." ? undefined : parseFloat(raw);
-    onChange(parsed);
+    const val = inputRef.current?.value ?? "";
+    const parsed = val === "" ? undefined : parseFloat(val);
+    onChange(isNaN(parsed as number) ? undefined : parsed);
   };
 
   return (
     <input
+      ref={inputRef}
       type="text"
-      value={raw}
-      onFocus={() => { focusedRef.current = true; }}
+      defaultValue={value !== undefined ? String(value) : ""}
       onKeyDown={(e) => {
-        if (e.key === ",") e.preventDefault();
-        if (e.key === "Enter") { commit(); (e.target as HTMLInputElement).blur(); }
-      }}
-      onChange={(e) => {
-        const val = e.target.value.replace(",", ".");
-        if (/^[\d]*\.?[\d]*$/.test(val)) setRaw(val);
+        if (e.key === ",") { e.preventDefault(); if (inputRef.current) inputRef.current.value += "."; return; }
+        if (e.key === "Enter") { commit(); inputRef.current?.blur(); }
       }}
       onBlur={commit}
       className="w-full border rounded px-2 py-1 text-sm text-right bg-background"
