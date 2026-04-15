@@ -249,7 +249,7 @@ export function PositionSizeCalculator() {
                       : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
                   }`}
                 >
-                  SPÉCULATIF
+                  FAIBLE
                 </button>
                 <button
                   onClick={() => {
@@ -261,7 +261,7 @@ export function PositionSizeCalculator() {
                       : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
                   }`}
                 >
-                  PRUDENT
+                  MOYEN
                 </button>
                 <button
                   onClick={() => {

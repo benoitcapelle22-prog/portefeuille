@@ -387,7 +387,7 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
             ))}
             <TableRow className="border-t-2 font-bold bg-muted/50">
               {hasPortfolioCol && <TableCell />}
-              <TableCell colSpan={showSector ? 4 : 3}>TOTAL</TableCell>
+              <TableCell colSpan={showSector ? 3 : 2}>TOTAL</TableCell>
               <TableCell className="text-right text-muted-foreground text-xs">{filtered.reduce((s, r) => s + r.ops, 0)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested + totalGainLoss)}</TableCell>
