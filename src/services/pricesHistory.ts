@@ -29,6 +29,43 @@ export async function savePricesToHistory(quotes: Quote[]): Promise<void> {
 }
 
 /**
+ * Récupère le dernier cours connu pour chaque symbole à une date donnée
+ * (remonte jusqu'à 30 jours en arrière pour gérer weekends / jours fériés).
+ */
+export async function getPricesForDate(
+  symbols: string[],
+  date: string
+): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+
+  const from = new Date(date);
+  from.setDate(from.getDate() - 30);
+  const fromStr = from.toISOString().split("T")[0];
+
+  const { data, error } = await supabase
+    .from("daily_prices")
+    .select("symbol, close, date")
+    .in("symbol", symbols.map((s) => s.toUpperCase()))
+    .lte("date", date)
+    .gte("date", fromStr)
+    .order("date", { ascending: false });
+
+  if (error) {
+    console.warn("Failed to fetch historical prices:", error.message);
+    return {};
+  }
+
+  const result: Record<string, number> = {};
+  for (const row of data ?? []) {
+    const sym = (row.symbol as string).toUpperCase();
+    if (!(sym in result)) {
+      result[sym] = Number(row.close);
+    }
+  }
+  return result;
+}
+
+/**
  * Récupère l'historique des cours pour un symbole.
  */
 export async function getPriceHistory(

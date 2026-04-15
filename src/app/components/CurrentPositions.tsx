@@ -32,6 +32,7 @@ import {
 } from "./ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { useQuotes } from "../hooks/useQuotes";
+import { useHistoricalPrices } from "../hooks/useHistoricalPrices";
 
 export interface Position {
   code: string;
@@ -153,6 +154,10 @@ export function CurrentPositions({
   );
 
   const { quotesBySymbol, loading, error, refresh, updatedAt } = useQuotes(symbols);
+  const { prices: historicalPrices, loading: historicalLoading } = useHistoricalPrices(
+    symbols,
+    endDate || null
+  );
 
   const updatedAtLabel = useMemo(() => {
     if (!updatedAt) return null;
@@ -168,12 +173,15 @@ export function CurrentPositions({
     return positions.map((p) => {
       const sym = (p.code || "").trim().toUpperCase();
       const livePrice = quotesBySymbol[sym]?.price ?? undefined;
+      const historicalPrice = endDate ? historicalPrices[sym] : undefined;
       const effectivePrice =
         p.manualCurrentPrice !== undefined
           ? p.manualCurrentPrice
-          : livePrice !== undefined
-            ? livePrice
-            : p.currentPrice;
+          : historicalPrice !== undefined
+            ? historicalPrice
+            : livePrice !== undefined
+              ? livePrice
+              : p.currentPrice;
 
       if (effectivePrice === undefined || !Number.isFinite(effectivePrice)) return { ...p };
 
@@ -182,7 +190,7 @@ export function CurrentPositions({
       const latentGainLossPercent = p.totalCost > 0 ? (latentGainLoss / p.totalCost) * 100 : 0;
       return { ...p, currentPrice: effectivePrice, totalValue, latentGainLoss, latentGainLossPercent };
     });
-  }, [positions, quotesBySymbol]);
+  }, [positions, quotesBySymbol, historicalPrices, endDate]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -433,22 +441,32 @@ export function CurrentPositions({
 
             {symbols.length > 0 && (
               <div className="flex items-center gap-2 ml-auto">
-                {error ? (
+                {endDate ? (
+                  historicalLoading ? (
+                    <span className="text-xs text-muted-foreground">Chargement cours historiques…</span>
+                  ) : (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Cours au {new Date(endDate).toLocaleDateString("fr-FR")}
+                    </span>
+                  )
+                ) : error ? (
                   <span className="text-xs text-red-500" title={error}>⚠ Cours indisponibles</span>
                 ) : updatedAtLabel ? (
                   <span className="text-xs text-muted-foreground">Cours mis à jour {updatedAtLabel}</span>
                 ) : null}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => refresh()}
-                  disabled={loading}
-                  title="Actualiser les cours"
-                  className="h-7 px-2"
-                >
-                  <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-                  <span className="ml-1 text-xs">{loading ? "..." : "Actualiser"}</span>
-                </Button>
+                {!endDate && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refresh()}
+                    disabled={loading}
+                    title="Actualiser les cours"
+                    className="h-7 px-2"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+                    <span className="ml-1 text-xs">{loading ? "..." : "Actualiser"}</span>
+                  </Button>
+                )}
               </div>
             )}
           </div>
