@@ -258,6 +258,24 @@ export async function upsertPosition(pos: DBPosition): Promise<void> {
   if (error) throw error;
 }
 
+export async function updatePositionStopLoss(portfolioId: string, code: string, stopLoss: number | undefined): Promise<void> {
+  const { error } = await supabase
+    .from('positions')
+    .update({ stop_loss: stopLoss ?? null })
+    .eq('portfolio_id', portfolioId)
+    .eq('code', code);
+  if (error) throw error;
+}
+
+export async function updatePositionManualPrice(portfolioId: string, code: string, manualCurrentPrice: number | undefined): Promise<void> {
+  const { error } = await supabase
+    .from('positions')
+    .update({ manual_current_price: manualCurrentPrice ?? null })
+    .eq('portfolio_id', portfolioId)
+    .eq('code', code);
+  if (error) throw error;
+}
+
 export async function bulkUpsertPositions(positions: DBPosition[]): Promise<void> {
   if (positions.length === 0) return;
   const rows = positions.map(pos => ({

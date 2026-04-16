@@ -32,6 +32,8 @@ import {
   setCurrentPortfolioId as saveCurrentPortfolioId,
   updatePortfolio,
   bulkAddTransactions,
+  updatePositionStopLoss,
+  updatePositionManualPrice,
   DBTransaction,
   DBPosition,
   DBClosedPosition,
@@ -817,9 +819,21 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
   const handleUpdateStopLoss = async (code: string, stopLoss: number | undefined) => {
     if (!currentPortfolioId) return;
     const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
+    const errors: string[] = [];
     for (const pid of portfolioIds) {
       const pos = portfolioData[pid]?.positions.find(p => p.code === code);
-      if (pos) await upsertPosition({ portfolioId: pid, code: pos.code, name: pos.name, quantity: pos.quantity, totalCost: pos.totalCost, pru: pos.pru, currency: pos.currency, stopLoss, manualCurrentPrice: pos.manualCurrentPrice, sector: pos.sector });
+      if (pos) {
+        try {
+          await updatePositionStopLoss(pid, code, stopLoss);
+        } catch (e: any) {
+          errors.push(String(e?.message ?? e));
+        }
+      }
+    }
+    if (errors.length > 0) {
+      console.error("Erreur sauvegarde stop loss:", errors);
+      alert("Erreur lors de la sauvegarde du stop loss : " + errors[0]);
+      return;
     }
     await refreshData();
   };
@@ -827,9 +841,20 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
   const handleUpdateCurrentPrice = async (code: string, manualCurrentPrice: number | undefined) => {
     if (!currentPortfolioId) return;
     const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
+    const errors: string[] = [];
     for (const pid of portfolioIds) {
       const pos = portfolioData[pid]?.positions.find(p => p.code === code);
-      if (pos) await upsertPosition({ portfolioId: pid, code: pos.code, name: pos.name, quantity: pos.quantity, totalCost: pos.totalCost, pru: pos.pru, currency: pos.currency, stopLoss: pos.stopLoss, manualCurrentPrice, sector: pos.sector });
+      if (pos) {
+        try {
+          await updatePositionManualPrice(pid, code, manualCurrentPrice);
+        } catch (e: any) {
+          errors.push(String(e?.message ?? e));
+        }
+      }
+    }
+    if (errors.length > 0) {
+      console.error("Erreur sauvegarde cours manuel:", errors);
+      return;
     }
     await refreshData();
   };
