@@ -7,7 +7,7 @@ import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
 import { DividendDialog } from "./DividendDialog";
 import { ImportTransactions } from "./ImportTransactions";
-import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw } from "lucide-react";
+import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe } from "lucide-react";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
@@ -108,6 +108,8 @@ export function PortfolioLayout() {
   const [totalPortfolio, setTotalPortfolio] = useState(0);
   const [importTxOpen, setImportTxOpen] = useState(false);
   const [recalcLoading, setRecalcLoading] = useState(false);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ============================================================
@@ -386,13 +388,24 @@ export function PortfolioLayout() {
         // rate = 1 EUR = ? portfolio_currency → pour convertir → EUR : diviser par rate
         const rate: number = (rates as Record<string, number>)[portfolio.currency] || 1;
 
-        data.transactions.forEach(t => {
-          let convertedTx: Transaction;
-          if (isEur) {
-            convertedTx = t;
-          } else {
-            // Use historical rate stored at operation time; fallback to today's rate for old data
+        if (isEur) {
+          // ── Portefeuille EUR : pas de conversion ────────────────
+          data.transactions.forEach(t => {
+            allTx.push({ ...t, portfolioCode: pid, portfolioId: portfolio.id } as any);
+          });
+          data.positions.forEach(p => {
+            allPos.push({ ...p, portfolioCode: pid, portfolioId: portfolio.id });
+          });
+          data.closedPositions.forEach(cp => {
+            allClosed.push({ ...cp, portfolioCode: pid });
+          });
+        } else {
+          // ── Portefeuille non-EUR : replay des transactions pour taux historiques ──
+
+          // 1. Transactions converties (historique + dépôts/retraits)
+          data.transactions.forEach(t => {
             const toEur: number = t.portfolioToEurRate ?? (1 / rate);
+            let convertedTx: Transaction;
             if (t.type === "depot" || t.type === "retrait") {
               convertedTx = { ...t, unitPrice: t.unitPrice * toEur };
             } else {
@@ -404,33 +417,114 @@ export function PortfolioLayout() {
                 ...(t.tax !== undefined ? { tax: t.tax * toEur } : {}),
               };
             }
-          }
-          allTx.push({ ...convertedTx, portfolioCode: pid, portfolioId: portfolio.id } as any);
-        });
+            allTx.push({ ...convertedTx, portfolioCode: pid, portfolioId: portfolio.id } as any);
+          });
 
-        data.positions.forEach(p => {
-          const convertedPos: Position = isEur ? p : {
-            ...p,
-            totalCost: p.totalCost / rate,
-            pru: p.pru / rate,
-            ...(p.stopLoss !== undefined ? { stopLoss: p.stopLoss / rate } : {}),
-          };
-          allPos.push({ ...convertedPos, portfolioCode: pid, portfolioId: portfolio.id });
-        });
+          // 2. Replay achats/ventes → coût EUR par position et par cloture
+          // eurCostMap : coût historique EUR des positions en cours
+          // closedEurMap : valeurs EUR des positions clôturées (clé = CODE|saleDate)
+          const eurCostMap = new Map<string, { totalCostEur: number; quantity: number }>();
+          const closedEurMap = new Map<string, { pruEur: number; totalPurchaseEur: number; totalSaleEur: number; gainLossEur: number }>();
 
-        data.closedPositions.forEach(cp => {
-          const convertedCp: ClosedPosition = isEur ? cp : {
-            ...cp,
-            pru: cp.pru / rate,
-            averageSalePrice: cp.averageSalePrice / rate,
-            totalPurchase: cp.totalPurchase / rate,
-            totalSale: cp.totalSale / rate,
-            gainLoss: cp.gainLoss / rate,
-            dividends: (cp.dividends || 0) / rate,
-            // gainLossPercent = ratio inchangé
-          };
-          allClosed.push({ ...convertedCp, portfolioCode: pid });
-        });
+          [...data.transactions]
+            .filter(t => t.type === "achat" || t.type === "vente")
+            .sort((a, b) => {
+              const diff = parseDate(a.date) - parseDate(b.date);
+              if (diff !== 0) return diff;
+              if (a.type === "achat" && b.type === "vente") return -1;
+              if (a.type === "vente" && b.type === "achat") return 1;
+              return 0;
+            })
+            .forEach(t => {
+              const code = t.code.trim().toUpperCase();
+              const toEur: number = t.portfolioToEurRate ?? (1 / rate);
+              if (t.type === "achat") {
+                const costInPort = t.quantity * t.unitPrice * (t.conversionRate || 1) + (t.fees || 0) + (t.tff || 0);
+                const costEur = costInPort * toEur;
+                const ex = eurCostMap.get(code);
+                if (ex) { ex.totalCostEur += costEur; ex.quantity += t.quantity; }
+                else eurCostMap.set(code, { totalCostEur: costEur, quantity: t.quantity });
+              } else {
+                const ex = eurCostMap.get(code);
+                if (ex && ex.quantity >= t.quantity) {
+                  const pruEur = ex.totalCostEur / ex.quantity;
+                  const totalPurchaseEur = t.quantity * pruEur;
+                  const saleInPort = t.quantity * t.unitPrice * (t.conversionRate || 1) - (t.fees || 0) - (t.tff || 0);
+                  const totalSaleEur = saleInPort * toEur;
+                  closedEurMap.set(`${code}|${t.date}`, {
+                    pruEur,
+                    totalPurchaseEur,
+                    totalSaleEur,
+                    gainLossEur: totalSaleEur - totalPurchaseEur,
+                  });
+                  ex.totalCostEur -= totalPurchaseEur;
+                  ex.quantity -= t.quantity;
+                  if (ex.quantity === 0) eurCostMap.delete(code);
+                }
+              }
+            });
+
+          // 3. Dividendes EUR par code (pour les positions clôturées)
+          const dividendsByCode = new Map<string, Array<{ date: string; amountEur: number }>>();
+          data.transactions
+            .filter(t => t.type === "dividende")
+            .forEach(t => {
+              const code = t.code.trim().toUpperCase();
+              const toEur: number = t.portfolioToEurRate ?? (1 / rate);
+              const amountEur = (t.quantity * t.unitPrice * (t.conversionRate || 1) - ((t as any).tax || 0)) * toEur;
+              if (!dividendsByCode.has(code)) dividendsByCode.set(code, []);
+              dividendsByCode.get(code)!.push({ date: t.date, amountEur });
+            });
+
+          // 4. Positions en cours : PRU + totalCost en EUR historique
+          //    Cours actuel et stop loss : taux du jour
+          data.positions.forEach(p => {
+            const code = p.code.trim().toUpperCase();
+            const eurCost = eurCostMap.get(code);
+            const totalCostEur = eurCost?.totalCostEur ?? (p.totalCost / rate);
+            const pruEur = p.quantity > 0 ? totalCostEur / p.quantity : p.pru / rate;
+            allPos.push({
+              ...p,
+              totalCost: totalCostEur,
+              pru: pruEur,
+              ...(p.stopLoss !== undefined ? { stopLoss: p.stopLoss / rate } : {}),
+              portfolioCode: pid,
+              portfolioId: portfolio.id,
+            });
+          });
+
+          // 5. Positions clôturées : valeurs EUR historiques
+          data.closedPositions.forEach(cp => {
+            const code = cp.code.trim().toUpperCase();
+            const eurVals = closedEurMap.get(`${code}|${cp.saleDate}`);
+            const divs = dividendsByCode.get(code) ?? [];
+            const purchaseTs = parseDate(cp.purchaseDate);
+            const saleTs = parseDate(cp.saleDate);
+            const dividendsEur = divs
+              .filter(d => parseDate(d.date) >= purchaseTs && parseDate(d.date) <= saleTs)
+              .reduce((sum, d) => sum + d.amountEur, 0);
+            const convertedCp: ClosedPosition = eurVals ? {
+              ...cp,
+              pru: eurVals.pruEur,
+              averageSalePrice: cp.quantity > 0 ? eurVals.totalSaleEur / cp.quantity : cp.averageSalePrice / rate,
+              totalPurchase: eurVals.totalPurchaseEur,
+              totalSale: eurVals.totalSaleEur,
+              gainLoss: eurVals.gainLossEur,
+              gainLossPercent: eurVals.totalPurchaseEur > 0 ? (eurVals.gainLossEur / eurVals.totalPurchaseEur) * 100 : cp.gainLossPercent,
+              dividends: dividendsEur || (cp.dividends || 0) / rate,
+            } : {
+              ...cp,
+              pru: cp.pru / rate,
+              averageSalePrice: cp.averageSalePrice / rate,
+              totalPurchase: cp.totalPurchase / rate,
+              totalSale: cp.totalSale / rate,
+              gainLoss: cp.gainLoss / rate,
+              gainLossPercent: cp.gainLossPercent,
+              dividends: dividendsEur || (cp.dividends || 0) / rate,
+            };
+            allClosed.push({ ...convertedCp, portfolioCode: pid });
+          });
+        }
       });
       return { transactions: allTx, positions: allPos, closedPositions: allClosed };
     }
@@ -969,6 +1063,117 @@ const recalcCashFromDB = async (portfolioId: string) => {
     setTotalPortfolio,
   };
 
+  const backfillPortfolioToEurRates = async () => {
+    setBackfillLoading(true);
+    setBackfillProgress("Chargement des transactions...");
+
+    const normalizeDate = (d: string): string => {
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) {
+        const [day, month, year] = d.split('/');
+        return `${year}-${month}-${day}`;
+      }
+      return d.split('T')[0];
+    };
+
+    try {
+      // Récupérer toutes les transactions sans taux EUR
+      const { data: rows, error } = await supabase
+        .from('transactions')
+        .select('id, portfolio_id, date')
+        .is('portfolio_to_eur_rate', null);
+      if (error) throw error;
+      if (!rows || rows.length === 0) {
+        setBackfillProgress("✅ Toutes les transactions ont déjà un taux EUR.");
+        setTimeout(() => setBackfillProgress(null), 4000);
+        setBackfillLoading(false);
+        return;
+      }
+
+      const portfolioCurrencyMap: Record<string, string> = {};
+      portfolios.forEach(p => { portfolioCurrencyMap[p.id] = p.currency || "EUR"; });
+
+      const eurRows = rows.filter(r => (portfolioCurrencyMap[r.portfolio_id] || "EUR") === "EUR");
+      const nonEurRows = rows.filter(r => (portfolioCurrencyMap[r.portfolio_id] || "EUR") !== "EUR");
+
+      setBackfillProgress(`${rows.length} transaction(s) à traiter (${nonEurRows.length} en devise étrangère)...`);
+
+      // ── Récupération des taux historiques (Frankfurter / BCE) ────
+      const uniquePairs = new Set<string>();
+      nonEurRows.forEach(r => {
+        const cur = portfolioCurrencyMap[r.portfolio_id] || "EUR";
+        uniquePairs.add(`${normalizeDate(r.date)}|${cur}`);
+      });
+
+      const rateCache: Record<string, number> = {};
+      const pairs = Array.from(uniquePairs);
+      let fetched = 0;
+      for (const pair of pairs) {
+        const [date, currency] = pair.split('|');
+        setBackfillProgress(`Taux historiques : ${++fetched}/${pairs.length} (${currency} du ${date})`);
+        try {
+          const apiCurrency = currency === "GBX" ? "GBP" : currency;
+          const resp = await fetch(`https://api.frankfurter.app/${date}?from=EUR&to=${apiCurrency}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            const eurToApi: number = data.rates?.[apiCurrency];
+            if (eurToApi && eurToApi > 0) {
+              let toEur = 1 / eurToApi;
+              if (currency === "GBX") toEur = toEur / 100; // 1 GBX = 1/100 GBP
+              rateCache[pair] = toEur;
+            }
+          }
+        } catch { /* on garde null pour cette paire */ }
+        await new Promise(res => setTimeout(res, 80)); // éviter le rate-limiting
+      }
+
+      // ── Mise à jour en base ──────────────────────────────────────
+      setBackfillProgress("Mise à jour en base de données...");
+      const BATCH = 100;
+
+      // Portefeuilles EUR : rate = 1
+      const eurIds = eurRows.map(r => r.id);
+      for (let i = 0; i < eurIds.length; i += BATCH) {
+        await supabase.from('transactions')
+          .update({ portfolio_to_eur_rate: 1 })
+          .in('id', eurIds.slice(i, i + BATCH));
+      }
+
+      // Portefeuilles non-EUR : regrouper par taux pour minimiser les requêtes
+      const rateToIds: Record<string, string[]> = {};
+      for (const row of nonEurRows) {
+        const cur = portfolioCurrencyMap[row.portfolio_id] || "EUR";
+        const key = `${normalizeDate(row.date)}|${cur}`;
+        const toEur = rateCache[key];
+        if (toEur !== undefined) {
+          const rateKey = String(toEur);
+          if (!rateToIds[rateKey]) rateToIds[rateKey] = [];
+          rateToIds[rateKey].push(row.id);
+        }
+      }
+      for (const [rateStr, ids] of Object.entries(rateToIds)) {
+        const rate = parseFloat(rateStr);
+        for (let i = 0; i < ids.length; i += BATCH) {
+          await supabase.from('transactions')
+            .update({ portfolio_to_eur_rate: rate })
+            .in('id', ids.slice(i, i + BATCH));
+        }
+      }
+
+      const missing = nonEurRows.length - Object.values(rateToIds).flat().length;
+      const msg = missing > 0
+        ? `✅ Terminé. ${missing} transaction(s) sans taux disponible (devise non supportée ou date trop ancienne).`
+        : "✅ Terminé. Tous les taux ont été mis à jour.";
+      setBackfillProgress(msg);
+      await refreshData();
+      setTimeout(() => setBackfillProgress(null), 6000);
+    } catch (err: any) {
+      setBackfillProgress("❌ Erreur : " + (err?.message ?? String(err)));
+      setTimeout(() => setBackfillProgress(null), 6000);
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
   const handleRecalcCash = async () => {
     if (!currentPortfolioId || currentPortfolioId === "ALL") {
       alert("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
@@ -1044,6 +1249,14 @@ const recalcCashFromDB = async (portfolioId: string) => {
                     <RefreshCw className={`h-4 w-4 ${recalcLoading ? "animate-spin" : ""}`} />
                     Recalculer les liquidités
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={backfillPortfolioToEurRates}
+                    disabled={backfillLoading}
+                    className="gap-2"
+                  >
+                    <Globe className={`h-4 w-4 ${backfillLoading ? "animate-spin" : ""}`} />
+                    {backfillLoading ? "Mise à jour taux EUR…" : "Backfill taux EUR historiques"}
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setImportTxOpen(true)} className="gap-2"><Upload className="h-4 w-4" />Importer des transactions</DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -1064,6 +1277,13 @@ const recalcCashFromDB = async (portfolioId: string) => {
               </button>
             </div>
           </div>
+
+          {backfillProgress && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm text-muted-foreground">
+              {backfillLoading && <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />}
+              {backfillProgress}
+            </div>
+          )}
 
           <Outlet />
 
