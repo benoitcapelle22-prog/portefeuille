@@ -53,6 +53,7 @@ function mapTransaction(row: any): DBTransaction {
     conversionRate: Number(row.conversion_rate ?? 1),
     tax: Number(row.tax ?? 0),
     sector: row.sector,
+    portfolioToEurRate: row.portfolio_to_eur_rate != null ? Number(row.portfolio_to_eur_rate) : undefined,
   };
 }
 
@@ -193,6 +194,7 @@ export async function addTransaction(tx: DBTransaction): Promise<void> {
     conversion_rate: tx.conversionRate ?? 1,
     tax: tx.tax ?? 0,
     sector: tx.sector,
+    portfolio_to_eur_rate: tx.portfolioToEurRate ?? null,
   });
   if (error) throw error;
 }
@@ -214,6 +216,7 @@ export async function bulkAddTransactions(txs: DBTransaction[]): Promise<void> {
     conversion_rate: tx.conversionRate ?? 1,
     tax: tx.tax ?? 0,
     sector: tx.sector,
+    portfolio_to_eur_rate: tx.portfolioToEurRate ?? null,
   }));
   const { error } = await supabase.from('transactions').insert(rows);
   if (error) throw error;

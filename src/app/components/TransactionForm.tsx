@@ -23,6 +23,7 @@ export interface Transaction {
   tax?: number;
   portfolioCode?: string;
   sector?: string;
+  portfolioToEurRate?: number;
 }
 
 interface TransactionFormProps {

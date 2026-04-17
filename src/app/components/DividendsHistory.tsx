@@ -257,7 +257,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                         <TableCell className="text-right">{formatCurrency(dividend.unitPrice, dividend.currency)}</TableCell>
                         <TableCell className="text-right">{dividend.quantity}</TableCell>
                         <TableCell>{dividend.currency}</TableCell>
-                        <TableCell className="text-right">{dividend.conversionRate}</TableCell>
+                        <TableCell className="text-right">{Number(dividend.conversionRate).toFixed(4)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.totalAmount)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.taxAmount)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.netAmount)}</TableCell>

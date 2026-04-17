@@ -39,6 +39,7 @@ import {
   DBClosedPosition,
 } from "../db";
 import { supabase } from "../supabase";
+import { useExchangeRates } from "../hooks/useExchangeRates";
 import {
   exportDatabase,
   importDatabase,
@@ -96,6 +97,7 @@ export function PortfolioLayout() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [currentPortfolioId, setCurrentPortfolioIdState] = useState<string | null>(null);
   const [portfolioData, setPortfolioData] = useState<Record<string, PortfolioData>>({});
+  const { rates } = useExchangeRates();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<any>({});
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
@@ -379,15 +381,61 @@ export function PortfolioLayout() {
       portfolios.forEach(portfolio => {
         const data = portfolioData[portfolio.id];
         if (!data) return;
-        const id = portfolio.code || portfolio.name;
-        data.transactions.forEach(t => allTx.push({ ...t, portfolioCode: id, portfolioId: portfolio.id } as any));
-        data.positions.forEach(p => allPos.push({ ...p, portfolioCode: id, portfolioId: portfolio.id }));
-        data.closedPositions.forEach(cp => allClosed.push({ ...cp, portfolioCode: id }));
+        const pid = portfolio.code || portfolio.name;
+        const isEur = !portfolio.currency || portfolio.currency === "EUR";
+        // rate = 1 EUR = ? portfolio_currency → pour convertir → EUR : diviser par rate
+        const rate: number = (rates as Record<string, number>)[portfolio.currency] || 1;
+
+        data.transactions.forEach(t => {
+          let convertedTx: Transaction;
+          if (isEur) {
+            convertedTx = t;
+          } else {
+            // Use historical rate stored at operation time; fallback to today's rate for old data
+            const toEur: number = t.portfolioToEurRate ?? (1 / rate);
+            if (t.type === "depot" || t.type === "retrait") {
+              convertedTx = { ...t, unitPrice: t.unitPrice * toEur };
+            } else {
+              convertedTx = {
+                ...t,
+                conversionRate: (t.conversionRate || 1) * toEur,
+                fees: (t.fees || 0) * toEur,
+                tff: (t.tff || 0) * toEur,
+                ...(t.tax !== undefined ? { tax: t.tax * toEur } : {}),
+              };
+            }
+          }
+          allTx.push({ ...convertedTx, portfolioCode: pid, portfolioId: portfolio.id } as any);
+        });
+
+        data.positions.forEach(p => {
+          const convertedPos: Position = isEur ? p : {
+            ...p,
+            totalCost: p.totalCost / rate,
+            pru: p.pru / rate,
+            ...(p.stopLoss !== undefined ? { stopLoss: p.stopLoss / rate } : {}),
+          };
+          allPos.push({ ...convertedPos, portfolioCode: pid, portfolioId: portfolio.id });
+        });
+
+        data.closedPositions.forEach(cp => {
+          const convertedCp: ClosedPosition = isEur ? cp : {
+            ...cp,
+            pru: cp.pru / rate,
+            averageSalePrice: cp.averageSalePrice / rate,
+            totalPurchase: cp.totalPurchase / rate,
+            totalSale: cp.totalSale / rate,
+            gainLoss: cp.gainLoss / rate,
+            dividends: (cp.dividends || 0) / rate,
+            // gainLossPercent = ratio inchangé
+          };
+          allClosed.push({ ...convertedCp, portfolioCode: pid });
+        });
       });
       return { transactions: allTx, positions: allPos, closedPositions: allClosed };
     }
     return portfolioData[currentPortfolioId] ?? { transactions: [], positions: [], closedPositions: [] };
-  }, [currentPortfolioId, portfolioData, portfolios]);
+  }, [currentPortfolioId, portfolioData, portfolios, rates]);
 
   const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
 
@@ -399,7 +447,15 @@ export function PortfolioLayout() {
     const targetId = portfolioId || currentPortfolioId;
     if (!targetId) return;
 
-    const newTx: DBTransaction = { ...transaction, id: crypto.randomUUID(), portfolioId: targetId };
+    const targetPortfolio = portfolios.find(p => p.id === targetId);
+    const portCurrency = targetPortfolio?.currency || "EUR";
+    const eurRate: number = portCurrency === "EUR" ? 1 : 1 / ((rates as Record<string, number>)[portCurrency] || 1);
+    const newTx: DBTransaction = {
+      ...transaction,
+      id: crypto.randomUUID(),
+      portfolioId: targetId,
+      portfolioToEurRate: eurRate,
+    };
     await dbAddTransaction(newTx);
 
     const targetData = portfolioData[targetId] ?? { transactions: [], positions: [], closedPositions: [] };
@@ -797,6 +853,8 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
     const newCash = type === "deposit"
       ? (currentPortfolio.cash || 0) + amount
       : (currentPortfolio.cash || 0) - amount;
+    const portCurrencyCash = currentPortfolio.currency || "EUR";
+    const eurRateCash: number = portCurrencyCash === "EUR" ? 1 : 1 / ((rates as Record<string, number>)[portCurrencyCash] || 1);
     const newTransaction: DBTransaction = {
       id: crypto.randomUUID(),
       portfolioId: currentPortfolioId,
@@ -810,6 +868,7 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
       tff: 0,
       currency: currentPortfolio.currency,
       conversionRate: 1,
+      portfolioToEurRate: eurRateCash,
     };
     await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
     await dbAddTransaction(newTransaction);

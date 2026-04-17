@@ -364,7 +364,11 @@ export function CurrentPositions({
   const totalLatentGainLoss = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).latentGainLossConverted || 0), 0);
   const totalLatentGainLossPercent = totalInvested > 0 ? (totalLatentGainLoss / totalInvested) * 100 : 0;
   const totalPortfolio = totalValue + cash;
-  const totalPortfolioInEUR = portfolioCurrency === "USD" ? totalPortfolio * getConversionRate("USD") : totalPortfolio;
+  // Pour convertir portfolio_currency → EUR : diviser par le taux (1 EUR = ? devise)
+  const portfolioRate = getConversionRate(portfolioCurrency);
+  const totalPortfolioInEUR = portfolioCurrency !== "EUR"
+    ? totalPortfolio / portfolioRate
+    : totalPortfolio;
 
   // ← NOUVEAU : remonter totalPortfolio au contexte dès qu'il change
   useEffect(() => {
@@ -766,7 +770,7 @@ export function CurrentPositions({
                 {portfolioCurrency !== "EUR" && (
                   <TableRow className="font-bold bg-amber-50 dark:bg-amber-950/20">
                     <TableCell colSpan={prefixColSpan} className="text-sm italic">
-                      TOTAL PORTEFEUILLE EN EUR (taux: {rates["USD"]?.toFixed(4)})
+                      TOTAL PORTEFEUILLE EN EUR (1 {portfolioCurrency} ≈ {(1 / portfolioRate).toFixed(4)} €)
                     </TableCell>
                     <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
                     <TableCell className="text-right"></TableCell>{/* Cours actuel */}

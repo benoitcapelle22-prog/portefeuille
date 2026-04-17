@@ -7,6 +7,7 @@ import { DividendsHistory } from "../components/DividendsHistory";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { Button } from "../components/ui/button";
 import { Plus } from "lucide-react";
+import { useExchangeRates } from "../hooks/useExchangeRates";
 
 export function TransactionsPage() {
   const {
@@ -36,13 +37,19 @@ export function TransactionsPage() {
     refreshData();
   }, [currentPortfolioId]);
 
+  const { getConversionRate } = useExchangeRates();
+
   const isConsolidatedView = currentPortfolioId === "ALL";
   const displayCurrency = isConsolidatedView ? "EUR" : currentPortfolio?.currency;
   const hasAnyTradingPortfolio = isConsolidatedView
     ? portfolios.some(p => p.category === "Trading")
     : currentPortfolio?.category === "Trading";
+  // Vue consolidée : cash de chaque portefeuille converti en EUR
   const totalCashConsolidated = isConsolidatedView
-    ? portfolios.reduce((sum, p) => sum + (p.cash || 0), 0)
+    ? portfolios.reduce((sum, p) => {
+        const rate = getConversionRate(p.currency); // 1 EUR = ? devise
+        return sum + (p.cash || 0) / rate;
+      }, 0)
     : (currentPortfolio?.cash || 0);
 
   return (
