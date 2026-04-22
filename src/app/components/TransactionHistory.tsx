@@ -95,8 +95,15 @@ export function TransactionHistory({
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("fr-FR");
 
   const getTotal = (transaction: Transaction) => {
-    if (transaction.type === "vente") return transaction.quantity * transaction.unitPrice - transaction.fees;
-    return transaction.quantity * transaction.unitPrice + transaction.fees + transaction.tff;
+    const rate = transaction.conversionRate || 1;
+    const gross = transaction.quantity * transaction.unitPrice * rate;
+    switch (transaction.type) {
+      case "vente":     return gross - (transaction.fees || 0);
+      case "dividende": return gross - ((transaction as any).tax || 0);
+      case "depot": case "retrait": case "frais": case "interets":
+        return transaction.unitPrice;
+      default:          return gross + (transaction.fees || 0) + (transaction.tff || 0);
+    }
   };
 
   const handleSort = (key: SortKey) => {
