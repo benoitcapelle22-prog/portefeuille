@@ -37,16 +37,12 @@ const PAGE_SIZE = 10;
 
 // ── Vue par opération ────────────────────────────────────────
 
-function ByOperationView({ closedPositions, portfolioCurrency }: { closedPositions: ClosedPosition[]; portfolioCurrency: string }) {
-  const [searchFilter, setSearchFilter] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [showSector, setShowSector] = useState(false);
+function ByOperationView({ closedPositions, portfolioCurrency, showSector }: { closedPositions: ClosedPosition[]; portfolioCurrency: string; showSector: boolean }) {
   const [sortKey, setSortKey] = useState<SortKeyOp>("saleDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [currentPage, setCurrentPage] = useState(1);
 
-  useEffect(() => { setCurrentPage(1); }, [searchFilter, startDate, endDate, sortKey, sortDir]);
+  useEffect(() => { setCurrentPage(1); }, [closedPositions, sortKey, sortDir]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('fr-FR', { style: 'currency', currency: portfolioCurrency }).format(value);
@@ -69,16 +65,7 @@ function ByOperationView({ closedPositions, portfolioCurrency }: { closedPositio
     </TableHead>
   );
 
-  const filtered = closedPositions.filter(p => {
-    const searchLower = searchFilter.toLowerCase();
-    const matchesSearch = searchFilter === "" || p.code.toLowerCase().includes(searchLower) || p.name.toLowerCase().includes(searchLower);
-    const saleDate = new Date(p.saleDate);
-    const matchesStart = !startDate || saleDate >= new Date(startDate);
-    const matchesEnd = !endDate || saleDate <= new Date(endDate);
-    return matchesSearch && matchesStart && matchesEnd;
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = [...closedPositions].sort((a, b) => {
     let aVal: any, bVal: any;
     switch (sortKey) {
       case "saleDate": aVal = new Date(a.saleDate).getTime(); bVal = new Date(b.saleDate).getTime(); break;
@@ -96,40 +83,18 @@ function ByOperationView({ closedPositions, portfolioCurrency }: { closedPositio
     return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
-  const totalGainLoss = filtered.reduce((s, p) => s + p.gainLoss, 0);
-  const totalInvested = filtered.reduce((s, p) => s + p.totalPurchase, 0);
+  const totalGainLoss = closedPositions.reduce((s, p) => s + p.gainLoss, 0);
+  const totalInvested = closedPositions.reduce((s, p) => s + p.totalPurchase, 0);
   const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const paginated = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
   const hasPortfolioCol = closedPositions.some(p => p.portfolioCode);
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 items-center flex-wrap">
-        <div className="relative flex-1 min-w-0 w-full sm:w-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input type="text" placeholder="Rechercher par code ou nom..." value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)} className="pl-9" />
-        </div>
-        <div className="flex gap-2 items-center">
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
-          <span className="text-muted-foreground">-</span>
-          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setShowSector(!showSector)}>
-          {showSector ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}Secteur
-        </Button>
-        {hasActiveFilters && (
-          <Button variant="outline" size="sm" onClick={() => { setSearchFilter(""); setStartDate(""); setEndDate(""); }}>
-            <X className="h-4 w-4 mr-1" />Réinitialiser
-          </Button>
-        )}
-      </div>
-
       <div className="overflow-x-auto">
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
@@ -179,7 +144,7 @@ function ByOperationView({ closedPositions, portfolioCurrency }: { closedPositio
       {totalPages > 1 && (
         <div className="flex items-center justify-between pt-2">
           <p className="text-sm text-muted-foreground">
-            {sorted.length} position{sorted.length > 1 ? "s" : ""}{hasActiveFilters ? " (filtrées)" : ""}{" — "}page {safePage} / {totalPages}
+            {sorted.length} position{sorted.length > 1 ? "s" : ""}{" — "}page {safePage} / {totalPages}
           </p>
           <div className="flex items-center gap-1">
             <Button variant="outline" size="sm" onClick={() => setCurrentPage(1)} disabled={safePage === 1}>«</Button>
@@ -223,40 +188,24 @@ interface TitleRow {
   ops: number;
 }
 
-function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { closedPositions: ClosedPosition[]; transactions: Transaction[]; portfolioCurrency: string }) {
-  const [searchFilter, setSearchFilter] = useState("");
-  const [showSector, setShowSector] = useState(false);
+function ByTitleView({ closedPositions, transactions, portfolioCurrency, showSector }: { closedPositions: ClosedPosition[]; transactions: Transaction[]; portfolioCurrency: string; showSector: boolean }) {
   const [sortKey, setSortKey] = useState<SortKeyTitle>("gainLoss");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [currentPage, setCurrentPage] = useState(1);
 
-  useEffect(() => { setCurrentPage(1); }, [searchFilter, sortKey, sortDir]);
+  useEffect(() => { setCurrentPage(1); }, [closedPositions, sortKey, sortDir]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('fr-FR', { style: 'currency', currency: portfolioCurrency }).format(value);
   const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 
-  // Regroupement par code + calcul des dividendes depuis transactions
   const titleRows: TitleRow[] = useMemo(() => {
     const map: Record<string, TitleRow> = {};
 
     for (const p of closedPositions) {
       const key = p.code;
       if (!map[key]) {
-        map[key] = {
-          code: p.code,
-          name: p.name,
-          sector: p.sector,
-          portfolioCode: p.portfolioCode,
-          totalPurchase: 0,
-          totalSale: 0,
-          gainLoss: 0,
-          gainLossPercent: 0,
-          dividends: 0,
-          totalWithDiv: 0,
-          totalWithDivPercent: 0,
-          ops: 0,
-        };
+        map[key] = { code: p.code, name: p.name, sector: p.sector, portfolioCode: p.portfolioCode, totalPurchase: 0, totalSale: 0, gainLoss: 0, gainLossPercent: 0, dividends: 0, totalWithDiv: 0, totalWithDivPercent: 0, ops: 0 };
       }
       map[key].totalPurchase += p.totalPurchase;
       map[key].totalSale += p.totalSale;
@@ -264,7 +213,6 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
       map[key].ops += 1;
     }
 
-    // Ajout des dividendes depuis toutes les transactions de type dividende
     for (const t of transactions) {
       if (t.type !== "dividende") continue;
       const key = (t.code || "").trim().toUpperCase();
@@ -275,7 +223,6 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
       }
     }
 
-    // Calcul des totaux finaux
     return Object.values(map).map(row => {
       row.gainLossPercent = row.totalPurchase > 0 ? (row.gainLoss / row.totalPurchase) * 100 : 0;
       row.totalWithDiv = row.gainLoss + row.dividends;
@@ -300,21 +247,16 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
     </TableHead>
   );
 
-  const filtered = titleRows.filter(r => {
-    const sl = searchFilter.toLowerCase();
-    return searchFilter === "" || r.code.toLowerCase().includes(sl) || r.name.toLowerCase().includes(sl);
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = [...titleRows].sort((a, b) => {
     let aVal: any = (a as any)[sortKey] ?? "";
     let bVal: any = (b as any)[sortKey] ?? "";
     if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, 'fr') : bVal.localeCompare(aVal, 'fr');
     return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
-  const totalGainLoss = filtered.reduce((s, r) => s + r.gainLoss, 0);
-  const totalInvested = filtered.reduce((s, r) => s + r.totalPurchase, 0);
-  const totalDividends = filtered.reduce((s, r) => s + r.dividends, 0);
+  const totalGainLoss = titleRows.reduce((s, r) => s + r.gainLoss, 0);
+  const totalInvested = titleRows.reduce((s, r) => s + r.totalPurchase, 0);
+  const totalDividends = titleRows.reduce((s, r) => s + r.dividends, 0);
   const totalWithDiv = totalGainLoss + totalDividends;
   const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
   const totalWithDivPercent = totalInvested > 0 ? (totalWithDiv / totalInvested) * 100 : 0;
@@ -327,22 +269,6 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 items-center flex-wrap">
-        <div className="relative flex-1 min-w-0 w-full sm:w-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input type="text" placeholder="Rechercher par code ou nom..." value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)} className="pl-9" />
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setShowSector(!showSector)}>
-          {showSector ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}Secteur
-        </Button>
-        {searchFilter && (
-          <Button variant="outline" size="sm" onClick={() => setSearchFilter("")}>
-            <X className="h-4 w-4 mr-1" />Réinitialiser
-          </Button>
-        )}
-      </div>
-
       <div className="overflow-x-auto">
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
@@ -388,7 +314,7 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
             <TableRow className="border-t-2 font-bold bg-muted/50">
               {hasPortfolioCol && <TableCell />}
               <TableCell colSpan={showSector ? 3 : 2}>TOTAL</TableCell>
-              <TableCell className="text-right text-muted-foreground text-xs">{filtered.reduce((s, r) => s + r.ops, 0)}</TableCell>
+              <TableCell className="text-right text-muted-foreground text-xs">{titleRows.reduce((s, r) => s + r.ops, 0)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested + totalGainLoss)}</TableCell>
               <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -440,38 +366,89 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency }: { clo
 
 export function ClosedPositions({ closedPositions, transactions, portfolioCurrency = 'EUR' }: ClosedPositionsProps) {
   const [view, setView] = useState<"operations" | "titres">("operations");
+  const [yearFilter, setYearFilter] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [showSector, setShowSector] = useState(false);
+
+  const years = useMemo(() => {
+    const set = new Set(closedPositions.map(p => new Date(p.saleDate).getFullYear()));
+    return Array.from(set).sort((a, b) => b - a);
+  }, [closedPositions]);
+
+  const filteredPositions = useMemo(() => {
+    return closedPositions.filter(p => {
+      const sl = searchFilter.toLowerCase();
+      const matchSearch = !searchFilter || p.code.toLowerCase().includes(sl) || p.name.toLowerCase().includes(sl);
+      const sd = new Date(p.saleDate);
+      const matchYear = yearFilter === "all" || sd.getFullYear() === Number(yearFilter);
+      const matchStart = !startDate || sd >= new Date(startDate);
+      const matchEnd = !endDate || sd <= new Date(endDate);
+      return matchSearch && matchYear && matchStart && matchEnd;
+    });
+  }, [closedPositions, searchFilter, yearFilter, startDate, endDate]);
+
+  const filteredTransactions = useMemo(() => {
+    if (yearFilter === "all") return transactions;
+    return transactions.filter(t => new Date(t.date).getFullYear() === Number(yearFilter));
+  }, [transactions, yearFilter]);
+
+  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "" || yearFilter !== "all";
+  const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); setYearFilter("all"); };
 
   return (
     <Card>
       <CardContent>
         <div className="space-y-4 pt-4">
+
+          {/* Filtres */}
+          <div className="flex gap-2 items-center flex-wrap">
+            <div className="relative flex-1 min-w-0 w-full sm:w-auto">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input type="text" placeholder="Rechercher par code ou nom..." value={searchFilter}
+                onChange={e => setSearchFilter(e.target.value)} className="pl-9" />
+            </div>
+            <select value={yearFilter} onChange={e => setYearFilter(e.target.value)}
+              className="border rounded px-2 py-1 text-sm bg-background text-foreground">
+              <option value="all">Toutes les années</option>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <div className="flex gap-2 items-center">
+              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
+              <span className="text-muted-foreground">-</span>
+              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowSector(s => !s)}>
+              {showSector ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}Secteur
+            </Button>
+            {hasActiveFilters && (
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                <X className="h-4 w-4 mr-1" />Réinitialiser
+              </Button>
+            )}
+          </div>
+
           {/* Sélecteur de vue */}
-          <div className="flex gap-2 border-b pb-3">
-            <button
-              onClick={() => setView("operations")}
-              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-                view === "operations"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Par opération
-            </button>
-            <button
-              onClick={() => setView("titres")}
-              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-                view === "titres"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Par titre (avec dividendes)
-            </button>
+          <div className="flex gap-2 items-center">
+            {(["operations", "titres"] as const).map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                  view === v
+                    ? "bg-primary text-primary-foreground border-transparent"
+                    : "border-border bg-background text-muted-foreground hover:border-muted-foreground"
+                }`}
+              >
+                {v === "operations" ? "Par opération" : "Par titre (avec dividendes)"}
+              </button>
+            ))}
           </div>
 
           {view === "operations"
-            ? <ByOperationView closedPositions={closedPositions} portfolioCurrency={portfolioCurrency} />
-            : <ByTitleView closedPositions={closedPositions} transactions={transactions} portfolioCurrency={portfolioCurrency} />
+            ? <ByOperationView closedPositions={filteredPositions} portfolioCurrency={portfolioCurrency} showSector={showSector} />
+            : <ByTitleView closedPositions={filteredPositions} transactions={filteredTransactions} portfolioCurrency={portfolioCurrency} showSector={showSector} />
           }
         </div>
       </CardContent>

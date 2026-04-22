@@ -5,8 +5,6 @@ import { ClosedPositions } from "../components/ClosedPositions";
 import { TransactionHistory } from "../components/TransactionHistory";
 import { DividendsHistory } from "../components/DividendsHistory";
 import { usePortfolio } from "../components/PortfolioLayout";
-import { Button } from "../components/ui/button";
-import { Plus } from "lucide-react";
 import { useExchangeRates } from "../hooks/useExchangeRates";
 
 export function TransactionsPage() {
@@ -24,6 +22,7 @@ export function TransactionsPage() {
     refreshData,
     setDialogOpen,
     setDialogInitialData,
+    quotesBySymbol,
   } = usePortfolio();
 
   // Onglet contrôlé : reset à "positions" à chaque changement de portefeuille
@@ -62,18 +61,6 @@ export function TransactionsPage() {
       </TabsList>
 
       <TabsContent value="positions">
-        <div className="flex justify-end gap-2 mb-4">
-          <Button
-            size="sm"
-            onClick={() => {
-              setDialogInitialData({});
-              setDialogOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Nouveau mouvement
-          </Button>
-        </div>
         <CurrentPositions
           positions={currentData.positions}
           portfolioCurrency={displayCurrency}
@@ -85,6 +72,8 @@ export function TransactionsPage() {
           onUpdateStopLoss={handleUpdateStopLoss}
           onUpdateCurrentPrice={handleUpdateCurrentPrice}
           portfolioId={currentPortfolioId || undefined}
+          quotesBySymbol={quotesBySymbol}
+          onNewTransaction={() => { setDialogInitialData({}); setDialogOpen(true); }}
         />
       </TabsContent>
 
@@ -97,21 +86,10 @@ export function TransactionsPage() {
       </TabsContent>
 
       <TabsContent value="dividendes">
-        <div className="flex justify-end mb-4">
-          <Button
-            size="sm"
-            onClick={() => {
-              setDialogInitialData({ type: "dividende" });
-              setDialogOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Nouveau dividende
-          </Button>
-        </div>
         <DividendsHistory
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}
+          onNewDividend={() => { setDialogInitialData({ type: "dividende" }); setDialogOpen(true); }}
         />
       </TabsContent>
 

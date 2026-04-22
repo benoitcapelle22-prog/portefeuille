@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { Card, CardContent, CardHeader } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -17,7 +17,6 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  RefreshCw,
 } from "lucide-react";
 import { Transaction } from "./TransactionForm";
 import { useExchangeRates } from "../hooks/useExchangeRates";
@@ -83,6 +82,8 @@ interface CurrentPositionsProps {
   portfolioId?: string;
   // ← NOUVEAU : callback pour remonter le total portefeuille valorisé au contexte
   onTotalPortfolioChange?: (total: number) => void;
+  onNewTransaction?: () => void;
+  quotesBySymbol?: Record<string, { price: number | null }>;
 }
 
 function PriceInput({
@@ -133,7 +134,9 @@ export function CurrentPositions({
   onUpdateStopLoss,
   onUpdateCurrentPrice,
   portfolioId,
-  onTotalPortfolioChange, // ← NOUVEAU
+  onTotalPortfolioChange,
+  onNewTransaction,
+  quotesBySymbol: quotesBySymbolProp,
 }: CurrentPositionsProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -153,21 +156,13 @@ export function CurrentPositions({
     [positions]
   );
 
-  const { quotesBySymbol, loading, error, refresh, updatedAt } = useQuotes(symbols);
+  const { quotesBySymbol: quotesFromHook } = useQuotes(quotesBySymbolProp ? [] : symbols);
+  const quotesBySymbol = quotesBySymbolProp ?? quotesFromHook;
   const { prices: historicalPrices, loading: historicalLoading } = useHistoricalPrices(
     symbols,
     endDate || null
   );
 
-  const updatedAtLabel = useMemo(() => {
-    if (!updatedAt) return null;
-    const diffMin = Math.floor((Date.now() - updatedAt) / 60_000);
-    if (diffMin < 1) return "à l'instant";
-    if (diffMin === 1) return "il y a 1 min";
-    if (diffMin < 60) return `il y a ${diffMin} min`;
-    const d = new Date(updatedAt);
-    return `à ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-  }, [updatedAt]);
 
   const positionsWithPrices: Position[] = useMemo(() => {
     return positions.map((p) => {
@@ -410,9 +405,8 @@ export function CurrentPositions({
 
   return (
     <Card>
-      <CardHeader></CardHeader>
       <CardContent>
-        <div className="space-y-4">
+        <div className="space-y-4 pt-4">
           {/* Filtres */}
           <div className="flex gap-2 items-center flex-wrap">
             <div className="relative flex-1 min-w-0 w-full sm:w-auto">
@@ -443,36 +437,23 @@ export function CurrentPositions({
               </Button>
             )}
 
-            {symbols.length > 0 && (
-              <div className="flex items-center gap-2 ml-auto">
-                {endDate ? (
-                  historicalLoading ? (
-                    <span className="text-xs text-muted-foreground">Chargement cours historiques…</span>
-                  ) : (
-                    <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Cours au {new Date(endDate).toLocaleDateString("fr-FR")}
-                    </span>
-                  )
-                ) : error ? (
-                  <span className="text-xs text-red-500" title={error}>⚠ Cours indisponibles</span>
-                ) : updatedAtLabel ? (
-                  <span className="text-xs text-muted-foreground">Cours mis à jour {updatedAtLabel}</span>
-                ) : null}
-                {!endDate && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => refresh()}
-                    disabled={loading}
-                    title="Actualiser les cours"
-                    className="h-7 px-2"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-                    <span className="ml-1 text-xs">{loading ? "..." : "Actualiser"}</span>
-                  </Button>
-                )}
-              </div>
-            )}
+            <div className="flex items-center gap-2 ml-auto">
+              {endDate && (
+                historicalLoading ? (
+                  <span className="text-xs text-muted-foreground">Chargement cours historiques…</span>
+                ) : (
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    Cours au {new Date(endDate).toLocaleDateString("fr-FR")}
+                  </span>
+                )
+              )}
+              {onNewTransaction && (
+                <Button size="sm" onClick={onNewTransaction} className="h-7 px-2">
+                  <Plus className="h-3 w-3 mr-1" />
+                  <span className="text-xs">Nouveau mouvement</span>
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-[400px] md:max-h-[600px] overflow-y-auto relative">
@@ -790,14 +771,14 @@ export function CurrentPositions({
 
                 {/* RISQUE TOTAL (Trading) */}
                 {portfolioCategory === "Trading" && (
-                  <TableRow className="font-bold bg-red-50 dark:bg-red-950/20">
+                  <TableRow className={`font-bold ${totalRisk >= 0 ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"}`}>
                     <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
                     <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
                     <TableCell className="text-right"></TableCell>{/* Cours actuel (vide) */}
                     <TableCell className="text-right"></TableCell>{/* Valeur actuelle */}
                     <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
                     <TableCell className="text-right"></TableCell>{/* Stop Loss */}
-                    <TableCell className="text-right text-sm text-red-700 dark:text-red-400">
+                    <TableCell className={`text-right text-sm ${totalRisk >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
                       {formatCurrency(totalRisk, portfolioCurrency)}
                     </TableCell>{/* Risque */}
                     <TableCell></TableCell>{/* Actions */}

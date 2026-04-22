@@ -62,6 +62,7 @@ export function TransactionHistory({
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState<Set<TransactionType>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -78,7 +79,7 @@ export function TransactionHistory({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchFilter, startDate, endDate, typeFilter, sortKey, sortDir]);
+  }, [searchFilter, startDate, endDate, yearFilter, typeFilter, sortKey, sortDir]);
 
   const formatCurrency = (value: number, currency?: string) => {
     return new Intl.NumberFormat("fr-FR", {
@@ -130,6 +131,11 @@ export function TransactionHistory({
     [transactions]
   );
 
+  const years = useMemo(() => {
+    const set = new Set(transactions.map(t => new Date(t.date).getFullYear()));
+    return Array.from(set).sort((a, b) => b - a);
+  }, [transactions]);
+
   const filteredTransactions = transactions.filter(transaction => {
     const searchLower = searchFilter.toLowerCase();
     const matchesSearch = searchFilter === "" ||
@@ -138,8 +144,9 @@ export function TransactionHistory({
     const transDate = new Date(transaction.date);
     const matchesStartDate = !startDate || transDate >= new Date(startDate);
     const matchesEndDate = !endDate || transDate <= new Date(endDate);
+    const matchesYear = yearFilter === "all" || transDate.getFullYear() === Number(yearFilter);
     const matchesType = typeFilter.size === 0 || typeFilter.has(transaction.type as TransactionType);
-    return matchesSearch && matchesStartDate && matchesEndDate && matchesType;
+    return matchesSearch && matchesStartDate && matchesEndDate && matchesYear && matchesType;
   });
 
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
@@ -170,11 +177,12 @@ export function TransactionHistory({
     safePage * PAGE_SIZE
   );
 
-  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "" || typeFilter.size > 0;
+  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "" || yearFilter !== "all" || typeFilter.size > 0;
   const resetFilters = () => {
     setSearchFilter("");
     setStartDate("");
     setEndDate("");
+    setYearFilter("all");
     setTypeFilter(new Set());
   };
 
@@ -303,7 +311,7 @@ export function TransactionHistory({
         {transactions.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">Aucun mouvement enregistré</p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 pt-4">
             {/* Ligne 1 : recherche + dates + export */}
             <div className="flex gap-2 items-center flex-wrap">
               <div className="relative flex-1 min-w-0 w-full sm:w-auto">
@@ -316,6 +324,14 @@ export function TransactionHistory({
                   className="pl-9"
                 />
               </div>
+              <select
+                value={yearFilter}
+                onChange={e => setYearFilter(e.target.value)}
+                className="border rounded px-2 py-1 text-sm bg-background text-foreground"
+              >
+                <option value="all">Toutes les années</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
               <div className="flex gap-2 items-center">
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
                 <span className="text-muted-foreground">-</span>

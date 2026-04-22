@@ -41,6 +41,7 @@ import {
 } from "../db";
 import { supabase } from "../supabase";
 import { useExchangeRates } from "../hooks/useExchangeRates";
+import { useQuotes } from "../hooks/useQuotes";
 import {
   exportDatabase,
   importDatabase,
@@ -83,6 +84,9 @@ export interface PortfolioContextType {
   recalcCashFromDB: (portfolioId: string) => Promise<void>;
   totalPortfolio: number;
   setTotalPortfolio: (value: number) => void;
+  quotesBySymbol: Record<string, { price: number | null }>;
+  refreshQuotes: () => Promise<void>;
+  quotesLoading: boolean;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | null>(null);
@@ -531,6 +535,12 @@ export function PortfolioLayout() {
     }
     return portfolioData[currentPortfolioId] ?? { transactions: [], positions: [], closedPositions: [] };
   }, [currentPortfolioId, portfolioData, portfolios, rates]);
+
+  const quoteSymbols = useMemo(
+    () => Array.from(new Set(currentData.positions.map(p => (p.code || '').trim().toUpperCase()).filter(Boolean))),
+    [currentData.positions]
+  );
+  const { quotesBySymbol, loading: quotesLoading, refresh: refreshQuotes } = useQuotes(quoteSymbols);
 
   const currentPortfolio = portfolios.find(p => p.id === currentPortfolioId);
 
@@ -1095,6 +1105,9 @@ const recalcCashFromDB = async (portfolioId: string) => {
     recalcCashFromDB,
     totalPortfolio,
     setTotalPortfolio,
+    quotesBySymbol,
+    refreshQuotes,
+    quotesLoading,
   };
 
   const backfillPortfolioToEurRates = async () => {
@@ -1422,6 +1435,14 @@ const recalcCashFromDB = async (portfolioId: string) => {
                   <DropdownMenuItem onClick={onEnableAutoBackup} className="gap-2"><HardDrive className="h-4 w-4" />Activer sauvegarde automatique</DropdownMenuItem>
                   <DropdownMenuItem onClick={onDisableAutoBackup} className="gap-2"><PauseCircle className="h-4 w-4" />Désactiver sauvegarde automatique</DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => refreshQuotes()}
+                    disabled={quotesLoading || quoteSymbols.length === 0}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${quotesLoading ? "animate-spin" : ""}`} />
+                    {quotesLoading ? "Actualisation des cours…" : "Actualiser les cours"}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={handleRecalcCash}
                     disabled={recalcLoading || !currentPortfolioId || currentPortfolioId === "ALL"}

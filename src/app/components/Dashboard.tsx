@@ -4,13 +4,14 @@ import { Transaction } from "./TransactionForm";
 import { ClosedPosition } from "./ClosedPositions";
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   BarChart, Bar
 } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#8DD1E1', '#D084D0', '#A4DE6C'];
 
@@ -493,7 +494,21 @@ export function Dashboard({
               const delta = vN - vN1;
               return (
                 <Card key={label}>
-                  <CardHeader className="pb-1"><CardTitle className="text-sm font-medium">{label}</CardTitle></CardHeader>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm font-medium flex items-center gap-1">
+                      {label}
+                      {label === "Ratio G/P" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-56 text-center">
+                            Un ratio de 2 signifie que vous avez gagné 2€ pour chaque euro perdu (sur positions clôturées uniquement).
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
                   <CardContent>
                     <p className="text-2xl font-bold">{fmt(vN)}</p>
                     <div className="flex items-center gap-2 mt-1">
@@ -525,7 +540,21 @@ export function Dashboard({
                       const delta = vN - vN1;
                       return (
                         <tr key={label} className="border-b last:border-0 hover:bg-muted/30">
-                          <td className="py-2 font-medium">{label}</td>
+                          <td className="py-2 font-medium">
+                            <span className="flex items-center gap-1">
+                              {label}
+                              {label === "Ratio Gain/Perte" && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-56 text-center">
+                                    Un ratio de 2 signifie que vous avez gagné 2€ pour chaque euro perdu (sur positions clôturées uniquement).
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </span>
+                          </td>
                           <td className="text-right py-2 text-muted-foreground">{fmt(vN1)}</td>
                           <td className="text-right py-2 font-semibold">{fmt(vN)}</td>
                           <td className="text-right py-2">

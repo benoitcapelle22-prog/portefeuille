@@ -3,13 +3,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditDividendDialog, type DividendRow } from "./EditDividendDialog";
 
 interface DividendsHistoryProps {
   transactions: Transaction[];
   portfolioCurrency?: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
+  onNewDividend?: () => void;
 }
 
 type SortKey =
@@ -28,7 +29,7 @@ type SortDir = "asc" | "desc";
 
 type SortKeyByTitle = "code" | "name" | "totalAmount" | "taxAmount" | "netAmount" | "count";
 
-export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: DividendsHistoryProps) {
+export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNewDividend }: DividendsHistoryProps) {
   const [view, setView] = useState<"operations" | "titres">("operations");
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -37,6 +38,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [sortKeyTitle, setSortKeyTitle] = useState<SortKeyByTitle>("netAmount");
   const [sortDirTitle, setSortDirTitle] = useState<SortDir>("desc");
+  const [yearFilter, setYearFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -53,7 +55,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchFilter, startDate, endDate, sortKey, sortDir, sortKeyTitle, sortDirTitle, view]);
+  }, [searchFilter, startDate, endDate, yearFilter, sortKey, sortDir, sortKeyTitle, sortDirTitle, view]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -83,6 +85,11 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
 
   const dividends = localTransactions.filter(t => t.type === "dividende");
 
+  const years = useMemo(() => {
+    const set = new Set(dividends.map(d => new Date(d.date).getFullYear()));
+    return Array.from(set).sort((a, b) => b - a);
+  }, [dividends]);
+
   const filteredDividends = dividends.filter(dividend => {
     const searchLower = searchFilter.toLowerCase();
     const matchesSearch =
@@ -92,7 +99,8 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
     const divDate = new Date(dividend.date);
     const matchesStartDate = !startDate || divDate >= new Date(startDate);
     const matchesEndDate = !endDate || divDate <= new Date(endDate);
-    return matchesSearch && matchesStartDate && matchesEndDate;
+    const matchesYear = yearFilter === "all" || divDate.getFullYear() === Number(yearFilter);
+    return matchesSearch && matchesStartDate && matchesEndDate && matchesYear;
   });
 
   const enriched = filteredDividends.map(d => ({
@@ -125,8 +133,8 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
   const totalTax = filteredDividends.reduce((sum, d) => sum + (d.tax || 0) * d.conversionRate, 0);
   const totalNetDividends = totalDividends - totalTax;
 
-  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "";
-  const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); };
+  const hasActiveFilters = searchFilter !== "" || startDate !== "" || endDate !== "" || yearFilter !== "all";
+  const resetFilters = () => { setSearchFilter(""); setStartDate(""); setEndDate(""); setYearFilter("all"); };
 
   // Vue par titre : agrégation par code
   const byTitleRows = useMemo(() => {
@@ -199,22 +207,6 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
         ) : (
           <div className="space-y-4 pt-4">
 
-            {/* Sélecteur de vue */}
-            <div className="flex gap-2 border-b pb-3">
-              <button
-                onClick={() => setView("operations")}
-                className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${view === "operations" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                Par opération
-              </button>
-              <button
-                onClick={() => setView("titres")}
-                className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${view === "titres" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                Par titre
-              </button>
-            </div>
-
             {/* Filtres communs */}
             <div className="flex gap-2 items-center flex-wrap">
               <div className="relative flex-1 min-w-0 w-full sm:w-auto">
@@ -227,6 +219,14 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                   className="pl-9"
                 />
               </div>
+              <select
+                value={yearFilter}
+                onChange={e => setYearFilter(e.target.value)}
+                className="border rounded px-2 py-1 text-sm bg-background text-foreground"
+              >
+                <option value="all">Toutes les années</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
               <div className="flex gap-2 items-center">
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
                 <span className="text-muted-foreground">-</span>
@@ -237,6 +237,28 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                   <X className="h-4 w-4 mr-1" />Réinitialiser
                 </Button>
               )}
+              {onNewDividend && (
+                <Button size="sm" onClick={onNewDividend}>
+                  <Plus className="h-4 w-4 mr-1" />Nouveau dividende
+                </Button>
+              )}
+            </div>
+
+            {/* Sélecteur de vue */}
+            <div className="flex gap-2 items-center">
+              {(["operations", "titres"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                    view === v
+                      ? "bg-primary text-primary-foreground border-transparent"
+                      : "border-border bg-background text-muted-foreground hover:border-muted-foreground"
+                  }`}
+                >
+                  {v === "operations" ? "Par opération" : "Par titre"}
+                </button>
+              ))}
             </div>
 
             {/* Vue par opération */}
