@@ -32,6 +32,7 @@ import {
   setCurrentPortfolioId as saveCurrentPortfolioId,
   updatePortfolio,
   bulkAddTransactions,
+  updatePositionQuantityAndCost,
   updatePositionStopLoss,
   updatePositionManualPrice,
   DBTransaction,
@@ -578,7 +579,8 @@ export function PortfolioLayout() {
     if (existing) {
       const newTotalCost = existing.totalCost + totalCost;
       const newQuantity = existing.quantity + tx.quantity;
-      await upsertPosition({ portfolioId, code: tx.code, name: tx.name, quantity: newQuantity, totalCost: newTotalCost, pru: newTotalCost / newQuantity, currency: tx.currency, stopLoss: existing.stopLoss, manualCurrentPrice: existing.manualCurrentPrice, sector: tx.sector });
+      // Targeted update : ne touche pas stop_loss ni manual_current_price (safe multi-devices)
+      await updatePositionQuantityAndCost(portfolioId, tx.code, newQuantity, newTotalCost, newTotalCost / newQuantity);
     } else {
       await upsertPosition({ id: crypto.randomUUID(), portfolioId, code: tx.code, name: tx.name, quantity: tx.quantity, totalCost, pru: totalCost / tx.quantity, currency: tx.currency, sector: tx.sector });
     }
@@ -606,7 +608,8 @@ export function PortfolioLayout() {
 
     const newQuantity = existing.quantity - tx.quantity;
     if (newQuantity === 0) await dbDeletePosition(portfolioId, tx.code);
-    else await upsertPosition({ portfolioId, code: tx.code, name: existing.name, quantity: newQuantity, totalCost: existing.totalCost - totalPurchase, pru: existing.pru, currency: existing.currency, stopLoss: existing.stopLoss, manualCurrentPrice: existing.manualCurrentPrice, sector: existing.sector });
+    // Targeted update : ne touche pas stop_loss ni manual_current_price (safe multi-devices)
+    else await updatePositionQuantityAndCost(portfolioId, tx.code, newQuantity, existing.totalCost - totalPurchase, existing.pru);
   };
 
   const handleDividend = async (tx: DBTransaction, portfolioId: string) => {
@@ -697,6 +700,13 @@ export function PortfolioLayout() {
 
     await dbDeleteTransaction(id);
     const updatedTransactions = currentData.transactions.filter(t => t.id !== id);
+
+    // Sauvegarder stop loss et cours manuels avant recalcul
+    const stopLossMap = new Map<string, { stopLoss?: number; manualCurrentPrice?: number }>();
+    (portfolioData[currentPortfolioId]?.positions ?? []).forEach(p => {
+      stopLossMap.set((p.code || "").trim().toUpperCase(), { stopLoss: p.stopLoss, manualCurrentPrice: p.manualCurrentPrice });
+    });
+
     const newPositions: DBPosition[] = [];
     const newClosedPositions: DBClosedPosition[] = [];
 
@@ -719,7 +729,8 @@ export function PortfolioLayout() {
             const newQuantity = existing.quantity + transaction.quantity;
             existing.quantity = newQuantity; existing.totalCost = newTotalCost; existing.pru = newTotalCost / newQuantity;
           } else {
-            newPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
+            const saved = stopLossMap.get((transaction.code || "").trim().toUpperCase());
+            newPositions.push({ id: crypto.randomUUID(), portfolioId: currentPortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector, ...saved });
           }
         } else if (transaction.type === "vente") {
           const existing = newPositions.find(p => p.code === transaction.code);
@@ -740,15 +751,18 @@ export function PortfolioLayout() {
         }
       });
 
-    // Recalcul du cash depuis toutes les transactions restantes
-    const newCash = recalcCash(updatedTransactions);
-
-    await deletePositionsByPortfolio(currentPortfolioId);
-    await deleteClosedPositionsByPortfolio(currentPortfolioId);
-    await bulkUpsertPositions(newPositions);
-    await bulkAddClosedPositions(newClosedPositions);
-    await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
-    await refreshData();
+    try {
+      const newCash = recalcCash(updatedTransactions);
+      await deletePositionsByPortfolio(currentPortfolioId);
+      await deleteClosedPositionsByPortfolio(currentPortfolioId);
+      await bulkUpsertPositions(newPositions);
+      await bulkAddClosedPositions(newClosedPositions);
+      await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
+    } catch (err) {
+      console.error('Erreur recalcul positions après suppression:', err);
+    } finally {
+      await refreshData();
+    }
   };
 
   // ============================================================
@@ -787,6 +801,16 @@ export function PortfolioLayout() {
 
     // Si le portefeuille a changé, recalculer les positions des deux portefeuilles
     if (portfolioChanged && originalPortfolioId) {
+      // Sauvegarder stop loss des deux portefeuilles
+      const origStopLossMap = new Map<string, { stopLoss?: number; manualCurrentPrice?: number }>();
+      (portfolioData[originalPortfolioId]?.positions ?? []).forEach(p => {
+        origStopLossMap.set((p.code || "").trim().toUpperCase(), { stopLoss: p.stopLoss, manualCurrentPrice: p.manualCurrentPrice });
+      });
+      const newPortStopLossMap = new Map<string, { stopLoss?: number; manualCurrentPrice?: number }>();
+      (portfolioData[effectivePortfolioId]?.positions ?? []).forEach(p => {
+        newPortStopLossMap.set((p.code || "").trim().toUpperCase(), { stopLoss: p.stopLoss, manualCurrentPrice: p.manualCurrentPrice });
+      });
+
       // 1. Recalc portefeuille d'origine (sans la transaction déplacée)
       const origTxs = (portfolioData[originalPortfolioId]?.transactions ?? []).filter(t => t.id !== updated.id);
       const origPositions: DBPosition[] = [];
@@ -796,7 +820,7 @@ export function PortfolioLayout() {
           const cost = t.quantity * t.unitPrice * t.conversionRate + (t.fees || 0) + (t.tff || 0);
           const ex = origPositions.find(p => p.code === t.code);
           if (ex) { ex.totalCost += cost; ex.quantity += t.quantity; ex.pru = ex.totalCost / ex.quantity; }
-          else origPositions.push({ id: crypto.randomUUID(), portfolioId: originalPortfolioId, code: t.code, name: t.name, quantity: t.quantity, totalCost: cost, pru: cost / t.quantity, currency: t.currency, sector: t.sector });
+          else { const saved = origStopLossMap.get((t.code || "").trim().toUpperCase()); origPositions.push({ id: crypto.randomUUID(), portfolioId: originalPortfolioId, code: t.code, name: t.name, quantity: t.quantity, totalCost: cost, pru: cost / t.quantity, currency: t.currency, sector: t.sector, ...saved }); }
         } else if (t.type === "vente") {
           const ex = origPositions.find(p => p.code === t.code);
           if (ex && ex.quantity >= t.quantity) {
@@ -831,7 +855,7 @@ export function PortfolioLayout() {
           const cost = t.quantity * t.unitPrice * t.conversionRate + (t.fees || 0) + (t.tff || 0);
           const ex = newPortfolioPositions.find(p => p.code === t.code);
           if (ex) { ex.totalCost += cost; ex.quantity += t.quantity; ex.pru = ex.totalCost / ex.quantity; }
-          else newPortfolioPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: t.code, name: t.name, quantity: t.quantity, totalCost: cost, pru: cost / t.quantity, currency: t.currency, sector: t.sector });
+          else { const saved = newPortStopLossMap.get((t.code || "").trim().toUpperCase()); newPortfolioPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: t.code, name: t.name, quantity: t.quantity, totalCost: cost, pru: cost / t.quantity, currency: t.currency, sector: t.sector, ...saved }); }
         } else if (t.type === "vente") {
           const ex = newPortfolioPositions.find(p => p.code === t.code);
           if (ex && ex.quantity >= t.quantity) {
@@ -862,6 +886,12 @@ export function PortfolioLayout() {
       t.id === updated.id ? updated : t
     );
 
+    // Sauvegarder stop loss et cours manuels avant recalcul
+    const stopLossMap = new Map<string, { stopLoss?: number; manualCurrentPrice?: number }>();
+    (portfolioData[effectivePortfolioId]?.positions ?? []).forEach(p => {
+      stopLossMap.set((p.code || "").trim().toUpperCase(), { stopLoss: p.stopLoss, manualCurrentPrice: p.manualCurrentPrice });
+    });
+
     const newPositions: DBPosition[] = [];
     const newClosedPositions: DBClosedPosition[] = [];
 
@@ -884,7 +914,8 @@ export function PortfolioLayout() {
             const newQuantity = existing.quantity + transaction.quantity;
             existing.quantity = newQuantity; existing.totalCost = newTotalCost; existing.pru = newTotalCost / newQuantity;
           } else {
-            newPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector });
+            const saved = stopLossMap.get((transaction.code || "").trim().toUpperCase());
+            newPositions.push({ id: crypto.randomUUID(), portfolioId: effectivePortfolioId, code: transaction.code, name: transaction.name, quantity: transaction.quantity, totalCost, pru: totalCost / transaction.quantity, currency: transaction.currency, sector: transaction.sector, ...saved });
           }
         } else if (transaction.type === "vente") {
           const existing = newPositions.find(p => p.code === transaction.code);
@@ -905,15 +936,18 @@ export function PortfolioLayout() {
         }
       });
 
-    // Recalcul du cash depuis toutes les transactions mises à jour
-    const newCash = recalcCash(updatedTransactions);
-
-    await deletePositionsByPortfolio(effectivePortfolioId);
-    await deleteClosedPositionsByPortfolio(effectivePortfolioId);
-    await bulkUpsertPositions(newPositions);
-    await bulkAddClosedPositions(newClosedPositions);
-    await dbUpdatePortfolio(effectivePortfolioId, { cash: newCash });
-    await refreshData();
+    try {
+      const newCash = recalcCash(updatedTransactions);
+      await deletePositionsByPortfolio(effectivePortfolioId);
+      await deleteClosedPositionsByPortfolio(effectivePortfolioId);
+      await bulkUpsertPositions(newPositions);
+      await bulkAddClosedPositions(newClosedPositions);
+      await dbUpdatePortfolio(effectivePortfolioId, { cash: newCash });
+    } catch (err) {
+      console.error('Erreur recalcul positions après édition:', err);
+    } finally {
+      await refreshData();
+    }
   };
 
   // ============================================================

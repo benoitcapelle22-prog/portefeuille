@@ -261,6 +261,17 @@ export async function upsertPosition(pos: DBPosition): Promise<void> {
   if (error) throw error;
 }
 
+export async function updatePositionQuantityAndCost(
+  portfolioId: string, code: string,
+  quantity: number, totalCost: number, pru: number
+): Promise<void> {
+  const { error } = await supabase.from('positions')
+    .update({ quantity, total_cost: totalCost, pru })
+    .eq('portfolio_id', portfolioId)
+    .eq('code', code);
+  if (error) throw error;
+}
+
 export async function updatePositionStopLoss(portfolioId: string, code: string, stopLoss: number | undefined): Promise<void> {
   const { error } = await supabase
     .from('positions')
