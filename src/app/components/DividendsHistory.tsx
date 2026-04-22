@@ -3,7 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil } from "lucide-react";
+import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditDividendDialog, type DividendRow } from "./EditDividendDialog";
 
@@ -37,6 +37,8 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [sortKeyTitle, setSortKeyTitle] = useState<SortKeyByTitle>("netAmount");
   const [sortDirTitle, setSortDirTitle] = useState<SortDir>("desc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   // ✅ local state pour refléter l’update sans dépendre du parent
   const [localTransactions, setLocalTransactions] = useState<Transaction[]>(transactions);
@@ -48,6 +50,10 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
   useEffect(() => {
     setLocalTransactions(transactions);
   }, [transactions]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchFilter, startDate, endDate, sortKey, sortDir, sortKeyTitle, sortDirTitle, view]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -146,6 +152,14 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
     if (typeof aVal === "string") return sortDirTitle === "asc" ? aVal.localeCompare(bVal as string, "fr") : (bVal as string).localeCompare(aVal, "fr");
     return sortDirTitle === "asc" ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
   });
+
+  const totalPagesOp = Math.max(1, Math.ceil(sortedDividends.length / PAGE_SIZE));
+  const safePageOp = Math.min(currentPage, totalPagesOp);
+  const paginatedDividends = sortedDividends.slice((safePageOp - 1) * PAGE_SIZE, safePageOp * PAGE_SIZE);
+
+  const totalPagesTitle = Math.max(1, Math.ceil(sortedByTitle.length / PAGE_SIZE));
+  const safePageTitle = Math.min(currentPage, totalPagesTitle);
+  const paginatedByTitle = sortedByTitle.slice((safePageTitle - 1) * PAGE_SIZE, safePageTitle * PAGE_SIZE);
 
   const handleSortTitle = (key: SortKeyByTitle) => {
     if (sortKeyTitle === key) setSortDirTitle(d => d === "asc" ? "desc" : "asc");
@@ -246,7 +260,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedDividends.map((dividend: any) => (
+                    {paginatedDividends.map((dividend: any) => (
                       <TableRow key={dividend.id}>
                         {hasPortfolioCodeColumn && (
                           <TableCell className="font-medium">{dividend.portfolioCode || "-"}</TableCell>
@@ -270,6 +284,18 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                     ))}
                   </TableBody>
                 </Table>
+                <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
+                  <span>{sortedDividends.length} opération{sortedDividends.length !== 1 ? "s" : ""}</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePageOp <= 1}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span>{safePageOp} / {totalPagesOp}</span>
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPagesOp, p + 1))} disabled={safePageOp >= totalPagesOp}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -304,7 +330,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                     {sortedByTitle.length === 0 && (
                       <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Aucun dividende pour ces filtres</TableCell></TableRow>
                     )}
-                    {sortedByTitle.map((row) => (
+                    {paginatedByTitle.map((row) => (
                       <TableRow key={`${row.portfolioCode || ""}-${row.code}`}>
                         {hasPortfolioCodeColumn && <TableCell className="font-medium">{row.portfolioCode || "-"}</TableCell>}
                         <TableCell className="font-medium">{row.code}</TableCell>
@@ -317,6 +343,18 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR" }: Di
                     ))}
                   </TableBody>
                 </Table>
+                <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
+                  <span>{sortedByTitle.length} titre{sortedByTitle.length !== 1 ? "s" : ""}</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePageTitle <= 1}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span>{safePageTitle} / {totalPagesTitle}</span>
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPagesTitle, p + 1))} disabled={safePageTitle >= totalPagesTitle}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 
