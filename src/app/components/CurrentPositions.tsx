@@ -75,7 +75,7 @@ interface CurrentPositionsProps {
   onAction?: (action: "achat" | "vente" | "dividende", position: Position, portfolioId?: string) => void;
   transactions?: Transaction[];
   cash?: number;
-  onUpdateCash?: (amount: number, type: "deposit" | "withdrawal", date: string) => void;
+  onUpdateCash?: (amount: number, type: "deposit" | "withdrawal" | "fees" | "interests", date: string) => void;
   portfolioCategory?: string;
   onUpdateStopLoss?: (code: string, stopLoss: number | undefined) => void;
   onUpdateCurrentPrice?: (code: string, manualCurrentPrice: number | undefined) => void;
@@ -142,7 +142,7 @@ export function CurrentPositions({
   const [endDate, setEndDate] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const [type, setType] = useState<"deposit" | "withdrawal">("deposit");
+  const [type, setType] = useState<"deposit" | "withdrawal" | "fees" | "interests">("deposit");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [showSector, setShowSector] = useState(false);
   const [showCurrency, setShowCurrency] = useState(false);
@@ -380,7 +380,7 @@ export function CurrentPositions({
     if (!onUpdateCash) return;
     const amountValue = parseFloat(amount);
     if (Number.isNaN(amountValue) || amountValue <= 0) { alert("Veuillez saisir un montant valide"); return; }
-    if (type === "withdrawal" && amountValue > cash) { alert("Montant insuffisant dans les liquidités"); return; }
+    if ((type === "withdrawal" || type === "fees") && amountValue > cash) { alert("Montant insuffisant dans les liquidités"); return; }
     onUpdateCash(amountValue, type, date);
     setAmount("");
     setIsDialogOpen(false);
@@ -670,7 +670,7 @@ export function CurrentPositions({
                               </div>
                               <div className="space-y-2">
                                 <Label htmlFor="cash-type">Type d'opération</Label>
-                                <Select value={type} onValueChange={(v: "deposit" | "withdrawal") => setType(v)}>
+                                <Select value={type} onValueChange={(v: "deposit" | "withdrawal" | "fees" | "interests") => setType(v)}>
                                   <SelectTrigger id="cash-type"><SelectValue /></SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="deposit">
@@ -680,7 +680,17 @@ export function CurrentPositions({
                                     </SelectItem>
                                     <SelectItem value="withdrawal">
                                       <div className="flex items-center gap-2">
-                                        <Minus className="h-4 w-4 text-red-600" />Retrait
+                                        <Minus className="h-4 w-4 text-orange-600" />Retrait
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value="fees">
+                                      <div className="flex items-center gap-2">
+                                        <Minus className="h-4 w-4 text-red-700" />Frais
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value="interests">
+                                      <div className="flex items-center gap-2">
+                                        <Plus className="h-4 w-4 text-teal-600" />Intérêts
                                       </div>
                                     </SelectItem>
                                   </SelectContent>
@@ -701,9 +711,9 @@ export function CurrentPositions({
                                 Liquidités actuelles: <span className="font-medium">{formatCurrency(cash, portfolioCurrency)}</span>
                                 <br />
                                 Après opération:{" "}
-                                <span className={`font-medium ${type === "deposit" ? "text-green-600" : "text-red-600"}`}>
+                                <span className={`font-medium ${type === "deposit" || type === "interests" ? "text-green-600" : "text-red-600"}`}>
                                   {formatCurrency(
-                                    type === "deposit" ? cash + (parseFloat(amount) || 0) : cash - (parseFloat(amount) || 0),
+                                    type === "deposit" || type === "interests" ? cash + (parseFloat(amount) || 0) : cash - (parseFloat(amount) || 0),
                                     portfolioCurrency
                                   )}
                                 </span>
@@ -711,7 +721,7 @@ export function CurrentPositions({
                             </div>
                             <DialogFooter>
                               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Annuler</Button>
-                              <Button onClick={handleSubmit}>{type === "deposit" ? "Déposer" : "Retirer"}</Button>
+                              <Button onClick={handleSubmit}>{{ deposit: "Déposer", withdrawal: "Retirer", fees: "Enregistrer frais", interests: "Enregistrer intérêts" }[type]}</Button>
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>

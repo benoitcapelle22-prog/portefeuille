@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Wallet, Plus, Minus } from "lucide-react";
+import { Wallet, Plus, Minus, Receipt, TrendingUp } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,13 +24,13 @@ import {
 interface CashManagerProps {
   cash: number;
   currency: string;
-  onUpdateCash: (amount: number, type: "deposit" | "withdrawal", date: string) => void;
+  onUpdateCash: (amount: number, type: "deposit" | "withdrawal" | "fees" | "interests", date: string) => void;
 }
 
 export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const [type, setType] = useState<"deposit" | "withdrawal">("deposit");
+  const [type, setType] = useState<"deposit" | "withdrawal" | "fees" | "interests">("deposit");
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   const formatCurrency = (value: number) => {
@@ -47,7 +47,7 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
       return;
     }
 
-    if (type === "withdrawal" && amountValue > cash) {
+    if ((type === "withdrawal" || type === "fees") && amountValue > cash) {
       alert("Montant insuffisant dans les liquidités");
       return;
     }
@@ -92,7 +92,7 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
 
                 <div className="space-y-2">
                   <Label htmlFor="cash-type">Type d'opération</Label>
-                  <Select value={type} onValueChange={(value: "deposit" | "withdrawal") => setType(value)}>
+                  <Select value={type} onValueChange={(value: "deposit" | "withdrawal" | "fees" | "interests") => setType(value)}>
                     <SelectTrigger id="cash-type">
                       <SelectValue />
                     </SelectTrigger>
@@ -105,8 +105,20 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
                       </SelectItem>
                       <SelectItem value="withdrawal">
                         <div className="flex items-center gap-2">
-                          <Minus className="h-4 w-4 text-red-600" />
+                          <Minus className="h-4 w-4 text-orange-600" />
                           Retrait
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="fees">
+                        <div className="flex items-center gap-2">
+                          <Receipt className="h-4 w-4 text-red-700" />
+                          Frais
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="interests">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-teal-600" />
+                          Intérêts
                         </div>
                       </SelectItem>
                     </SelectContent>
@@ -130,10 +142,10 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
                   <br />
                   Après opération:{" "}
                   <span className={`font-medium ${
-                    type === "deposit" ? "text-green-600" : "text-red-600"
+                    type === "deposit" || type === "interests" ? "text-green-600" : "text-red-600"
                   }`}>
                     {formatCurrency(
-                      type === "deposit"
+                      type === "deposit" || type === "interests"
                         ? cash + (parseFloat(amount) || 0)
                         : cash - (parseFloat(amount) || 0)
                     )}
@@ -145,7 +157,7 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
                   Annuler
                 </Button>
                 <Button onClick={handleSubmit}>
-                  {type === "deposit" ? "Déposer" : "Retirer"}
+                  {{ deposit: "Déposer", withdrawal: "Retirer", fees: "Enregistrer frais", interests: "Enregistrer intérêts" }[type]}
                 </Button>
               </DialogFooter>
             </DialogContent>

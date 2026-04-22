@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { supabase } from "../supabase";
 
-export type TxType = "achat" | "vente" | "dividende" | "depot" | "retrait";
+export type TxType = "achat" | "vente" | "dividende" | "depot" | "retrait" | "frais" | "interets";
 
 export type TransactionRow = {
   id: string;

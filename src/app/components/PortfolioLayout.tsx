@@ -133,6 +133,8 @@ export function PortfolioLayout() {
   // HELPER : recalcul du cash depuis zéro à partir des transactions
   //   depot     → + unitPrice  (montant brut en devise portefeuille)
   //   retrait   → - unitPrice
+  //   frais     → - unitPrice
+  //   interets  → + unitPrice
   //   achat     → - (qté × prix × taux + frais + tff)
   //   vente     → + (qté × prix × taux - frais - tff)
   //   dividende → + (qté × prix × taux - taxe)
@@ -146,6 +148,10 @@ export function PortfolioLayout() {
           return cash + t.unitPrice;
         case "retrait":
           return cash - t.unitPrice;
+        case "frais":
+          return cash - t.unitPrice;
+        case "interets":
+          return cash + t.unitPrice;
         case "achat":
           return cash - (t.quantity * converted + (t.fees || 0) + (t.tff || 0));
         case "vente":
@@ -411,7 +417,7 @@ export function PortfolioLayout() {
           data.transactions.forEach(t => {
             const toEur: number = t.portfolioToEurRate ?? (1 / rate);
             let convertedTx: Transaction;
-            if (t.type === "depot" || t.type === "retrait") {
+            if (t.type === "depot" || t.type === "retrait" || t.type === "frais" || t.type === "interets") {
               convertedTx = { ...t, unitPrice: t.unitPrice * toEur };
             } else {
               convertedTx = {
@@ -986,20 +992,23 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
   }
 };
 
-  const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal", date: string) => {
+  const handleUpdateCash = async (amount: number, type: "deposit" | "withdrawal" | "fees" | "interests", date: string) => {
     if (!currentPortfolioId || !currentPortfolio) return;
-    const newCash = type === "deposit"
+    const increases = type === "deposit" || type === "interests";
+    const newCash = increases
       ? (currentPortfolio.cash || 0) + amount
       : (currentPortfolio.cash || 0) - amount;
     const portCurrencyCash = currentPortfolio.currency || "EUR";
     const eurRateCash: number = portCurrencyCash === "EUR" ? 1 : 1 / ((rates as Record<string, number>)[portCurrencyCash] || 1);
+    const TX_NAMES = { deposit: "Dépôt de liquidités", withdrawal: "Retrait de liquidités", fees: "Frais", interests: "Intérêts" };
+    const TX_TYPES = { deposit: "depot", withdrawal: "retrait", fees: "frais", interests: "interets" } as const;
     const newTransaction: DBTransaction = {
       id: crypto.randomUUID(),
       portfolioId: currentPortfolioId,
       date,
       code: "CASH",
-      name: type === "deposit" ? "Dépôt de liquidités" : "Retrait de liquidités",
-      type: type === "deposit" ? "depot" : "retrait",
+      name: TX_NAMES[type],
+      type: TX_TYPES[type],
       quantity: 1,
       unitPrice: amount,
       fees: 0,
@@ -1066,6 +1075,8 @@ const recalcCashFromDB = async (portfolioId: string) => {
     switch (t.type) {
       case "depot":     return cash + t.unitPrice;
       case "retrait":   return cash - t.unitPrice;
+      case "frais":     return cash - t.unitPrice;
+      case "interets":  return cash + t.unitPrice;
       case "achat":     return cash - (t.quantity * converted + (t.fees || 0) + (t.tff || 0));
       case "vente":     return cash + (t.quantity * converted - (t.fees || 0) - (t.tff || 0));
       case "dividende": return cash + (t.quantity * converted - ((t as any).tax || 0));
@@ -1343,6 +1354,8 @@ const recalcCashFromDB = async (portfolioId: string) => {
         switch (t.type) {
           case "depot":     return cash + t.unitPrice;
           case "retrait":   return cash - t.unitPrice;
+          case "frais":     return cash - t.unitPrice;
+          case "interets":  return cash + t.unitPrice;
           case "achat":     return cash - (t.quantity * converted + (t.fees || 0) + (t.tff || 0));
           case "vente":     return cash + (t.quantity * converted - (t.fees || 0) - (t.tff || 0));
           case "dividende": return cash + (t.quantity * converted - ((t as any).tax || 0));

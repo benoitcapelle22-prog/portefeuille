@@ -30,7 +30,7 @@ type SortDir = "asc" | "desc" | null;
 
 type TransactionType = Transaction["type"];
 
-const ALL_TYPES: TransactionType[] = ["achat", "vente", "dividende", "depot", "retrait"];
+const ALL_TYPES: TransactionType[] = ["achat", "vente", "dividende", "depot", "retrait", "frais", "interets"];
 
 const TYPE_LABELS: Record<TransactionType, string> = {
   achat:     "Achat",
@@ -38,6 +38,8 @@ const TYPE_LABELS: Record<TransactionType, string> = {
   dividende: "Dividende",
   depot:     "Dépôt",
   retrait:   "Retrait",
+  frais:     "Frais",
+  interets:  "Intérêts",
 };
 
 const TYPE_STYLES: Record<TransactionType, string> = {
@@ -46,6 +48,8 @@ const TYPE_STYLES: Record<TransactionType, string> = {
   dividende: "bg-green-600 text-white hover:bg-green-700",
   depot:     "bg-blue-600 text-white hover:bg-blue-700",
   retrait:   "bg-orange-600 text-white hover:bg-orange-700",
+  frais:     "bg-red-700 text-white hover:bg-red-800",
+  interets:  "bg-teal-600 text-white hover:bg-teal-700",
 };
 
 const PAGE_SIZE = 10;
@@ -234,6 +238,8 @@ export function TransactionHistory({
       case "dividende": return <Badge className="bg-green-600">Dividende</Badge>;
       case "depot":     return <Badge className="bg-blue-600">Dépôt</Badge>;
       case "retrait":   return <Badge className="bg-orange-600">Retrait</Badge>;
+      case "frais":     return <Badge className="bg-red-700">Frais</Badge>;
+      case "interets":  return <Badge className="bg-teal-600">Intérêts</Badge>;
       default:          return <Badge>{type}</Badge>;
     }
   };

@@ -13,7 +13,7 @@ export interface Transaction {
   date: string;
   code: string;
   name: string;
-  type: "achat" | "vente" | "dividende" | "depot" | "retrait";
+  type: "achat" | "vente" | "dividende" | "depot" | "retrait" | "frais" | "interets";
   quantity: number;
   unitPrice: number;
   fees: number;
@@ -38,7 +38,7 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [type, setType] = useState<"achat" | "vente" | "dividende" | "depot" | "retrait">("achat");
+  const [type, setType] = useState<"achat" | "vente" | "dividende" | "depot" | "retrait" | "frais" | "interets">("achat");
   const [quantity, setQuantity] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [fees, setFees] = useState("");
