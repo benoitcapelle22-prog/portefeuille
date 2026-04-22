@@ -1208,6 +1208,153 @@ const recalcCashFromDB = async (portfolioId: string) => {
     }
   };
 
+  const [recalcPRULoading, setRecalcPRULoading] = useState(false);
+  const [recalcPRUProgress, setRecalcPRUProgress] = useState<string | null>(null);
+
+  const recalcPRU = async () => {
+    if (!currentPortfolioId || currentPortfolioId === "ALL") {
+      alert("Sélectionnez un portefeuille spécifique pour recalculer les PRU.");
+      return;
+    }
+    if (!confirm("Recalculer les PRU, positions et liquidités depuis l'historique des transactions ?\n\nLes stop loss et cours manuels seront préservés.")) return;
+
+    setRecalcPRULoading(true);
+    setRecalcPRUProgress("Chargement des transactions depuis la base...");
+
+    try {
+      // Lecture fraîche depuis Supabase
+      const [txs, existingPos] = await Promise.all([
+        getTransactions(currentPortfolioId),
+        getPositions(currentPortfolioId),
+      ]);
+
+      setRecalcPRUProgress(`${txs.length} transaction(s) trouvée(s) — recalcul en cours...`);
+
+      // Préserver stop loss et cours manuels
+      const stopLossMap = new Map<string, { stopLoss?: number; manualCurrentPrice?: number }>();
+      existingPos.forEach(p => {
+        stopLossMap.set((p.code || "").trim().toUpperCase(), {
+          stopLoss: p.stopLoss,
+          manualCurrentPrice: p.manualCurrentPrice,
+        });
+      });
+
+      // Replay des transactions pour reconstruire positions et positions clôturées
+      const newPositions: DBPosition[] = [];
+      const newClosedPositions: DBClosedPosition[] = [];
+
+      const sortedTxs = [...txs]
+        .filter(t => t.type === "achat" || t.type === "vente")
+        .sort((a, b) => {
+          const diff = parseDate(a.date) - parseDate(b.date);
+          if (diff !== 0) return diff;
+          if (a.type === "achat" && b.type === "vente") return -1;
+          if (a.type === "vente" && b.type === "achat") return 1;
+          return 0;
+        });
+
+      for (const t of sortedTxs) {
+        const code = (t.code || "").trim().toUpperCase();
+        const convertedPrice = t.unitPrice * (t.conversionRate || 1);
+
+        if (t.type === "achat") {
+          const totalCost = t.quantity * convertedPrice + (t.fees || 0) + (t.tff || 0);
+          const existing = newPositions.find(p => (p.code || "").trim().toUpperCase() === code);
+          if (existing) {
+            const newTotalCost = existing.totalCost + totalCost;
+            const newQty = existing.quantity + t.quantity;
+            existing.totalCost = newTotalCost;
+            existing.quantity = newQty;
+            existing.pru = newTotalCost / newQty;
+          } else {
+            const saved = stopLossMap.get(code);
+            newPositions.push({
+              id: crypto.randomUUID(),
+              portfolioId: currentPortfolioId,
+              code: t.code,
+              name: t.name,
+              quantity: t.quantity,
+              totalCost,
+              pru: totalCost / t.quantity,
+              currency: t.currency,
+              sector: t.sector,
+              ...saved,
+            });
+          }
+        } else if (t.type === "vente") {
+          const existing = newPositions.find(p => (p.code || "").trim().toUpperCase() === code);
+          if (!existing || existing.quantity < t.quantity) {
+            console.warn(`RecalcPRU: vente ignorée (position insuffisante) pour ${t.code}`);
+            continue;
+          }
+          const totalSale = t.quantity * convertedPrice - (t.fees || 0) - (t.tff || 0);
+          const totalPurchase = t.quantity * existing.pru;
+          const gainLoss = totalSale - totalPurchase;
+
+          const purchaseTx = txs.filter(tx => tx.code === t.code && tx.type === "achat")
+            .sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+          const purchaseDate = new Date(purchaseTx?.date || t.date);
+          const saleDate = new Date(t.date);
+          const dividends = txs
+            .filter(tx => tx.code === t.code && tx.type === "dividende"
+              && new Date(tx.date) >= purchaseDate && new Date(tx.date) <= saleDate)
+            .reduce((sum, tx) => sum + (tx.unitPrice * tx.quantity * (tx.conversionRate || 1) - ((tx as any).tax || 0)), 0);
+
+          newClosedPositions.push({
+            id: crypto.randomUUID(),
+            portfolioId: currentPortfolioId,
+            code: t.code,
+            name: t.name,
+            purchaseDate: purchaseTx?.date || t.date,
+            saleDate: t.date,
+            quantity: t.quantity,
+            pru: existing.pru,
+            averageSalePrice: totalSale / t.quantity,
+            totalPurchase,
+            totalSale,
+            gainLoss,
+            gainLossPercent: totalPurchase > 0 ? (gainLoss / totalPurchase) * 100 : 0,
+            dividends,
+            sector: existing.sector,
+          });
+
+          const newQty = existing.quantity - t.quantity;
+          if (newQty === 0) newPositions.splice(newPositions.indexOf(existing), 1);
+          else { existing.quantity = newQty; existing.totalCost -= totalPurchase; }
+        }
+      }
+
+      // Recalcul du cash
+      const newCash = txs.reduce((cash, t) => {
+        const converted = t.unitPrice * (t.conversionRate || 1);
+        switch (t.type) {
+          case "depot":     return cash + t.unitPrice;
+          case "retrait":   return cash - t.unitPrice;
+          case "achat":     return cash - (t.quantity * converted + (t.fees || 0) + (t.tff || 0));
+          case "vente":     return cash + (t.quantity * converted - (t.fees || 0) - (t.tff || 0));
+          case "dividende": return cash + (t.quantity * converted - ((t as any).tax || 0));
+          default:          return cash;
+        }
+      }, 0);
+
+      setRecalcPRUProgress("Mise à jour en base de données...");
+      await deletePositionsByPortfolio(currentPortfolioId);
+      await deleteClosedPositionsByPortfolio(currentPortfolioId);
+      await bulkUpsertPositions(newPositions);
+      await bulkAddClosedPositions(newClosedPositions);
+      await dbUpdatePortfolio(currentPortfolioId, { cash: newCash });
+
+      setRecalcPRUProgress(`✅ Terminé — ${newPositions.length} position(s) en cours, ${newClosedPositions.length} position(s) clôturée(s) recalculées.`);
+      await refreshData();
+      setTimeout(() => setRecalcPRUProgress(null), 6000);
+    } catch (err: any) {
+      setRecalcPRUProgress("❌ Erreur : " + (err?.message ?? String(err)));
+      setTimeout(() => setRecalcPRUProgress(null), 6000);
+    } finally {
+      setRecalcPRULoading(false);
+    }
+  };
+
   const handleRecalcCash = async () => {
     if (!currentPortfolioId || currentPortfolioId === "ALL") {
       alert("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
@@ -1291,6 +1438,14 @@ const recalcCashFromDB = async (portfolioId: string) => {
                     <Globe className={`h-4 w-4 ${backfillLoading ? "animate-spin" : ""}`} />
                     {backfillLoading ? "Mise à jour taux EUR…" : "Backfill taux EUR historiques"}
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={recalcPRU}
+                    disabled={recalcPRULoading || !currentPortfolioId || currentPortfolioId === "ALL"}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${recalcPRULoading ? "animate-spin" : ""}`} />
+                    {recalcPRULoading ? "Recalcul PRU…" : "Recalculer les PRU"}
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setImportTxOpen(true)} className="gap-2"><Upload className="h-4 w-4" />Importer des transactions</DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -1316,6 +1471,12 @@ const recalcCashFromDB = async (portfolioId: string) => {
             <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm text-muted-foreground">
               {backfillLoading && <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />}
               {backfillProgress}
+            </div>
+          )}
+          {recalcPRUProgress && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm text-muted-foreground">
+              {recalcPRULoading && <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />}
+              {recalcPRUProgress}
             </div>
           )}
 
