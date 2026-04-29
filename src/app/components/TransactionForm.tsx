@@ -74,9 +74,19 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
     setQuoteStatus("loading");
 
     debounceRef.current = setTimeout(async () => {
+  const sectorFetch = import.meta.env.DEV
+    ? fetch(`/yahoo-proxy/v7/finance/quote?symbols=${encodeURIComponent(trimmed)}&fields=sector,longName`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          const quote = data?.quoteResponse?.result?.[0];
+          return quote ? { sector: quote.sector ?? null, name: quote.longName ?? null } : null;
+        })
+        .catch(() => null)
+    : fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null);
+
   const [tickerRes, stockRes] = await Promise.all([
     fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    sectorFetch,
   ]);
 
   // Nom : priorité ticker, fallback yahoo-search

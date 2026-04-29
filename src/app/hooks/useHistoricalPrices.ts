@@ -8,7 +8,8 @@ type UseHistoricalPricesResult = {
 
 export function useHistoricalPrices(
   symbols: string[],
-  date: string | null
+  date: string | null,
+  refreshKey?: number
 ): UseHistoricalPricesResult {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -38,7 +39,7 @@ export function useHistoricalPrices(
     return () => {
       cancelled = true;
     };
-  }, [symbolsKey, date]);
+  }, [symbolsKey, date, refreshKey]);
 
   return { prices, loading };
 }

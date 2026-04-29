@@ -1,4 +1,5 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+type VercelRequest = { query: Record<string, string | string[] | undefined> };
+type VercelResponse = { status(c: number): VercelResponse; json(b: unknown): void; setHeader(k: string, v: string): void };
 
 type SearchResult = {
   symbol: string;
@@ -39,26 +40,18 @@ async function fetchNameFromChart(symbol: string): Promise<string | null> {
   return meta?.longName ?? meta?.shortName ?? null;
 }
 
-// Secteur via Alpha Vantage (clé gratuite : alphavantage.co)
-async function fetchSectorFromAlphaVantage(symbol: string): Promise<{ name: string | null; sector: string | null }> {
-  const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
-  if (!apiKey) return { name: null, sector: null };
-
+// Secteur + nom via Yahoo Finance v7/finance/quote
+async function fetchFromQuote(symbol: string): Promise<{ name: string | null; sector: string | null }> {
   const res = await fetchWithTimeout(
-    `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`
+    `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}&fields=sector,longName`
   );
   if (!res?.ok) return { name: null, sector: null };
   const data = await res.json();
-
-  // Alpha Vantage retourne `{"Information": "..."}` si quota dépassé
-  if (data?.Information || data?.Note) {
-    console.warn("Alpha Vantage quota dépassé ou note:", data.Information ?? data.Note);
-    return { name: null, sector: null };
-  }
-
+  const quote = data?.quoteResponse?.result?.[0];
+  if (!quote) return { name: null, sector: null };
   return {
-    name: data?.Name ?? null,
-    sector: data?.Sector ?? null,
+    name: quote.longName ?? null,
+    sector: quote.sector ?? null,
   };
 }
 
@@ -78,14 +71,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  // Appels en parallèle : chart Yahoo (nom) + Alpha Vantage (nom + secteur)
-  const [chartName, avData] = await Promise.all([
+  // Appels en parallèle : chart Yahoo (nom fallback) + v7/quote (nom + secteur)
+  const [chartName, quoteData] = await Promise.all([
     fetchNameFromChart(q),
-    fetchSectorFromAlphaVantage(q),
+    fetchFromQuote(q),
   ]);
 
-  const name = avData.name ?? chartName;
-  const sector = avData.sector ?? null;
+  const name = quoteData.name ?? chartName;
+  const sector = quoteData.sector ?? null;
 
   console.log(`yahoo-search ${q}: name=${name} sector=${sector}`);
 

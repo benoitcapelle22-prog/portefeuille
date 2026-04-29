@@ -1,4 +1,5 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+type VercelRequest = { query: Record<string, string | string[] | undefined> };
+type VercelResponse = { status(c: number): VercelResponse; json(b: unknown): void; setHeader(k: string, v: string): void };
 
 type SearchResult = {
   symbol: string;

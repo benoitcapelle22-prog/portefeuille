@@ -1,4 +1,5 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+type VercelRequest = { query: Record<string, string | string[] | undefined> };
+type VercelResponse = { status(c: number): VercelResponse; json(b: unknown): void; setHeader(k: string, v: string): void };
 
 const cache = new Map<string, { data: any; expiresAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;

@@ -7,7 +7,7 @@ import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
 import { DividendDialog } from "./DividendDialog";
 import { ImportTransactions } from "./ImportTransactions";
-import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe } from "lucide-react";
+import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe, History } from "lucide-react";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
@@ -42,6 +42,7 @@ import {
 import { supabase } from "../supabase";
 import { useExchangeRates } from "../hooks/useExchangeRates";
 import { useQuotes } from "../hooks/useQuotes";
+import { backfillHistoricalPrices } from "../../services/pricesHistory";
 import {
   exportDatabase,
   importDatabase,
@@ -1235,6 +1236,24 @@ const recalcCashFromDB = async (portfolioId: string) => {
   const [recalcPRULoading, setRecalcPRULoading] = useState(false);
   const [recalcPRUProgress, setRecalcPRUProgress] = useState<string | null>(null);
 
+  const handleBackfillHistory = async () => {
+    if (quoteSymbols.length === 0) { alert("Aucun symbole à récupérer."); return; }
+    setBackfillLoading(true);
+    setBackfillProgress(`0 / ${quoteSymbols.length}`);
+    try {
+      const { saved, failed } = await backfillHistoricalPrices(
+        quoteSymbols,
+        (done, total, symbol) => setBackfillProgress(symbol ? `${done + 1} / ${total} — ${symbol}` : `${total} / ${total}`)
+      );
+      setBackfillProgress(`✓ ${saved} cours sauvegardés${failed.length ? ` (${failed.length} échecs)` : ""}`);
+    } catch (e: any) {
+      setBackfillProgress(`Erreur : ${e?.message}`);
+    } finally {
+      setBackfillLoading(false);
+      setTimeout(() => setBackfillProgress(null), 4000);
+    }
+  };
+
   const recalcPRU = async () => {
     if (!currentPortfolioId || currentPortfolioId === "ALL") {
       alert("Sélectionnez un portefeuille spécifique pour recalculer les PRU.");
@@ -1455,6 +1474,14 @@ const recalcCashFromDB = async (portfolioId: string) => {
                   >
                     <RefreshCw className={`h-4 w-4 ${quotesLoading ? "animate-spin" : ""}`} />
                     {quotesLoading ? "Actualisation des cours…" : "Actualiser les cours"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleBackfillHistory}
+                    disabled={backfillLoading || quoteSymbols.length === 0}
+                    className="gap-2"
+                  >
+                    <History className={`h-4 w-4 ${backfillLoading ? "animate-spin" : ""}`} />
+                    {backfillLoading ? `Historique… ${backfillProgress ?? ""}` : "Récupérer l'historique des cours"}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={handleRecalcCash}

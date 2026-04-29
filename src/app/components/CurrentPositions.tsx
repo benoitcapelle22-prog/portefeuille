@@ -17,6 +17,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  RefreshCw,
 } from "lucide-react";
 import { Transaction } from "./TransactionForm";
 import { useExchangeRates } from "../hooks/useExchangeRates";
@@ -32,6 +33,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { useQuotes } from "../hooks/useQuotes";
 import { useHistoricalPrices } from "../hooks/useHistoricalPrices";
+import { fetchAndSavePricesForDate } from "../../services/pricesHistory";
 
 export interface Position {
   code: string;
@@ -148,6 +150,12 @@ export function CurrentPositions({
   const [showCurrency, setShowCurrency] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [fetchingHistorical, setFetchingHistorical] = useState(false);
+  const [fetchProgress, setFetchProgress] = useState<{ done: number; total: number; symbol: string } | null>(null);
+  const [postFetchPrices, setPostFetchPrices] = useState<Record<string, number>>({});
+  const [fetchResultMsg, setFetchResultMsg] = useState<string | null>(null);
+
+  useEffect(() => { setPostFetchPrices({}); }, [endDate]);
 
   const { rates, getConversionRate } = useExchangeRates();
 
@@ -163,12 +171,39 @@ export function CurrentPositions({
     endDate || null
   );
 
+  const handleFetchHistoricalForDate = async () => {
+    if (!endDate) return;
+    const symbolsToFetch = Array.from(
+      new Set(recomputedPositions.map((p) => (p.code || "").trim().toUpperCase()).filter(Boolean))
+    );
+    if (symbolsToFetch.length === 0) return;
+    setFetchingHistorical(true);
+    setFetchProgress({ done: 0, total: symbolsToFetch.length, symbol: "" });
+    try {
+      const { pricesBySymbol, failed } = await fetchAndSavePricesForDate(symbolsToFetch, endDate, (done, total, symbol) => {
+        setFetchProgress({ done, total, symbol });
+      });
+      const fetched = Object.keys(pricesBySymbol).length;
+      setPostFetchPrices(pricesBySymbol);
+      setFetchResultMsg(fetched > 0
+        ? `${fetched} cours récupéré${fetched > 1 ? "s" : ""}${failed.length > 0 ? ` (${failed.length} échec)` : ""}`
+        : `Aucun cours récupéré${failed.length > 0 ? ` — ${failed.length} échec(s)` : ""}`
+      );
+      setTimeout(() => setFetchResultMsg(null), 6000);
+    } finally {
+      setFetchingHistorical(false);
+      setFetchProgress(null);
+    }
+  };
+
 
   const positionsWithPrices: Position[] = useMemo(() => {
     return positions.map((p) => {
       const sym = (p.code || "").trim().toUpperCase();
       const livePrice = quotesBySymbol[sym]?.price ?? undefined;
-      const historicalPrice = endDate ? historicalPrices[sym] : undefined;
+      const historicalPrice = endDate
+        ? (postFetchPrices[sym] ?? historicalPrices[sym])
+        : undefined;
       const effectivePrice =
         p.manualCurrentPrice !== undefined
           ? p.manualCurrentPrice
@@ -185,7 +220,7 @@ export function CurrentPositions({
       const latentGainLossPercent = p.totalCost > 0 ? (latentGainLoss / p.totalCost) * 100 : 0;
       return { ...p, currentPrice: effectivePrice, totalValue, latentGainLoss, latentGainLossPercent };
     });
-  }, [positions, quotesBySymbol, historicalPrices, endDate]);
+  }, [positions, quotesBySymbol, historicalPrices, postFetchPrices, endDate]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -272,13 +307,16 @@ export function CurrentPositions({
     // Reconstruire les positions en fusionnant avec les données existantes (cours, stopLoss, etc.)
     return Object.entries(posMap).map(([code, calc]) => {
       const existing = positionsWithPrices.find(p => (p.code || "").trim().toUpperCase() === code);
-      const base: Position = existing
-        ? { ...existing, quantity: calc.quantity, totalCost: calc.totalCost, pru: calc.pru }
-        : { code, name: code, quantity: calc.quantity, totalCost: calc.totalCost, pru: calc.pru };
 
-      // Recalculer totalValue et latentGainLoss avec le nouveau totalCost
-      if (base.currentPrice !== undefined && Number.isFinite(base.currentPrice)) {
-        const totalValue = base.quantity * base.currentPrice;
+      // Cours historique : priorité postFetchPrices > historicalPrices > cours live existant
+      const historicalPrice = postFetchPrices[code] ?? historicalPrices[code] ?? existing?.currentPrice;
+
+      const base: Position = existing
+        ? { ...existing, quantity: calc.quantity, totalCost: calc.totalCost, pru: calc.pru, currentPrice: historicalPrice }
+        : { code, name: code, quantity: calc.quantity, totalCost: calc.totalCost, pru: calc.pru, currentPrice: historicalPrice };
+
+      if (historicalPrice !== undefined && Number.isFinite(historicalPrice)) {
+        const totalValue = base.quantity * historicalPrice;
         return {
           ...base,
           totalValue,
@@ -288,7 +326,7 @@ export function CurrentPositions({
       }
       return { ...base, totalValue: undefined, latentGainLoss: undefined, latentGainLossPercent: undefined };
     });
-  }, [endDate, transactions, positionsWithPrices]);
+  }, [endDate, transactions, positionsWithPrices, postFetchPrices, historicalPrices]);
 
   // Recalcul des liquidités à la date du filtre (replay de toutes les transactions)
   const historicalCash = useMemo(() => {
@@ -467,10 +505,33 @@ export function CurrentPositions({
               {endDate && (
                 historicalLoading ? (
                   <span className="text-xs text-muted-foreground">Chargement cours historiques…</span>
-                ) : (
-                  <span className="text-xs text-amber-600 dark:text-amber-400">
-                    Cours au {new Date(endDate).toLocaleDateString("fr-FR")}
+                ) : fetchingHistorical ? (
+                  <span className="text-xs text-muted-foreground">
+                    {fetchProgress && fetchProgress.total > 0
+                      ? `Récupération ${fetchProgress.done}/${fetchProgress.total}${fetchProgress.symbol ? ` — ${fetchProgress.symbol}` : ""}`
+                      : "Récupération…"}
                   </span>
+                ) : (
+                  <>
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Cours au {new Date(endDate).toLocaleDateString("fr-FR")}
+                    </span>
+                    {fetchResultMsg && (
+                      <span className={`text-xs ${fetchResultMsg.startsWith("Aucun") ? "text-red-500" : "text-green-600"}`}>
+                        {fetchResultMsg}
+                      </span>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={handleFetchHistoricalForDate}
+                      title="Récupérer les cours historiques pour cette date"
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      <span className="text-xs">Récupérer cours</span>
+                    </Button>
+                  </>
                 )
               )}
               {onNewTransaction && (

@@ -1,4 +1,5 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+type VercelRequest = { query: Record<string, string | string[] | undefined>; headers: Record<string, string | string[] | undefined> };
+type VercelResponse = { status(c: number): VercelResponse; json(b: unknown): void; setHeader(k: string, v: string): void };
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL!;
 const SUPABASE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY!;
