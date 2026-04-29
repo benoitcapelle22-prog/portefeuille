@@ -290,6 +290,32 @@ export function CurrentPositions({
     });
   }, [endDate, transactions, positionsWithPrices]);
 
+  // Recalcul des liquidités à la date du filtre (replay de toutes les transactions)
+  const historicalCash = useMemo(() => {
+    if (!endDate || !transactions || transactions.length === 0) return null;
+    const cutoff = new Date(endDate);
+    cutoff.setHours(23, 59, 59, 999);
+    let c = 0;
+    const sorted = [...transactions]
+      .filter(t => new Date(t.date) <= cutoff)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    for (const t of sorted) {
+      const conv = t.conversionRate || 1;
+      switch (t.type) {
+        case "depot":    c += t.unitPrice; break;
+        case "retrait":  c -= t.unitPrice; break;
+        case "frais":    c -= t.unitPrice; break;
+        case "interets": c += t.unitPrice; break;
+        case "achat":    c -= t.quantity * t.unitPrice * conv + (t.fees || 0) + (t.tff || 0); break;
+        case "vente":    c += t.quantity * t.unitPrice * conv - (t.fees || 0); break;
+        case "dividende": c += t.quantity * t.unitPrice * conv - ((t as any).tax || 0) * conv; break;
+      }
+    }
+    return c;
+  }, [endDate, transactions]);
+
+  const displayCash = historicalCash !== null ? historicalCash : cash;
+
   const filteredPositions = recomputedPositions.filter((position) => {
     const searchLower = searchFilter.toLowerCase();
     return (
@@ -358,7 +384,7 @@ export function CurrentPositions({
   const totalValue = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).totalValueConverted || 0), 0);
   const totalLatentGainLoss = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).latentGainLossConverted || 0), 0);
   const totalLatentGainLossPercent = totalInvested > 0 ? (totalLatentGainLoss / totalInvested) * 100 : 0;
-  const totalPortfolio = totalValue + cash;
+  const totalPortfolio = totalValue + displayCash;
   // Pour convertir portfolio_currency → EUR : diviser par le taux (1 EUR = ? devise)
   const portfolioRate = getConversionRate(portfolioCurrency);
   const totalPortfolioInEUR = portfolioCurrency !== "EUR"
@@ -730,7 +756,7 @@ export function CurrentPositions({
                   </TableCell>
                   <TableCell className="text-right font-medium">-</TableCell>{/* Montant d'entrée */}
                   <TableCell className="text-right font-medium">-</TableCell>{/* Cours actuel */}
-                  <TableCell className="text-right font-medium text-blue-600">{formatCurrency(cash, portfolioCurrency)}</TableCell>
+                  <TableCell className="text-right font-medium text-blue-600">{formatCurrency(displayCash, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right">-</TableCell>
                   {portfolioCategory === "Trading" && (
                     <>

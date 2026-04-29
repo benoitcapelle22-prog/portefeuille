@@ -109,6 +109,7 @@ export function Dashboard({
   const [activeTab, setActiveTab] = useState<Tab>("valorisation");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -116,20 +117,30 @@ export function Dashboard({
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("fr-FR", { style: "currency", currency: portfolioCurrency }).format(value);
 
+  // Années disponibles pour l'onglet valorisation/performance
+  const availableYearsValPerf = useMemo(() => {
+    const txYears = transactions.map(t => getYear(t.date));
+    const cpYears = closedPositions.map(p => getYear(p.saleDate));
+    const years = Array.from(new Set([...txYears, ...cpYears])).sort((a, b) => b - a);
+    return years;
+  }, [transactions, closedPositions]);
+
   const filteredTransactions = transactions.filter(t => {
     const d = new Date(t.date);
-    return (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate));
+    const matchYear = yearFilter === "all" || getYear(t.date) === parseInt(yearFilter);
+    return matchYear && (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate));
   });
 
   const filteredClosedPositions = closedPositions.filter(p => {
     const d = new Date(p.saleDate);
-    return (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate));
+    const matchYear = yearFilter === "all" || getYear(p.saleDate) === parseInt(yearFilter);
+    return matchYear && (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate));
   });
 
-  const hasActiveFilters = startDate !== "" || endDate !== "";
-  const resetFilters = () => { setStartDate(""); setEndDate(""); };
+  const hasActiveFilters = startDate !== "" || endDate !== "" || yearFilter !== "all";
+  const resetFilters = () => { setStartDate(""); setEndDate(""); setYearFilter("all"); };
 
-  // Années disponibles dans les positions clôturées
+  // Années disponibles dans les positions clôturées (onglet trading)
   const availableYears = useMemo(() => {
     const years = Array.from(new Set(closedPositions.map(p => getYear(p.saleDate)))).sort((a, b) => b - a);
     return years.length > 0 ? years : [currentYear];
@@ -143,10 +154,61 @@ export function Dashboard({
 
   const unrealizedGainLoss        = totalValue - totalInvested;
   const unrealizedGainLossPercent = totalInvested > 0 ? (unrealizedGainLoss / totalInvested) * 100 : 0;
+
+  // Reconstruction du capital investi et des liquidités à la date de fin du filtre (replay transactions)
+  const historicalPortfolio = useMemo(() => {
+    const cutoff = endDate || (yearFilter !== "all" ? `${yearFilter}-12-31` : null);
+    if (!cutoff) return null;
+
+    const posMap = new Map<string, { totalCost: number; quantity: number }>();
+    let historicalCash = 0;
+
+    const sorted = [...transactions]
+      .filter(t => t.date <= cutoff)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    for (const t of sorted) {
+      const conv = t.conversionRate || 1;
+      switch (t.type) {
+        case "achat": {
+          const cost = t.quantity * t.unitPrice * conv + (t.fees || 0) + (t.tff || 0);
+          const ex = posMap.get(t.code);
+          if (ex) { ex.totalCost += cost; ex.quantity += t.quantity; }
+          else posMap.set(t.code, { totalCost: cost, quantity: t.quantity });
+          historicalCash -= cost;
+          break;
+        }
+        case "vente": {
+          const ex = posMap.get(t.code);
+          if (ex && ex.quantity > 0) {
+            const pru = ex.totalCost / ex.quantity;
+            ex.quantity -= t.quantity;
+            ex.totalCost -= pru * t.quantity;
+            if (ex.quantity <= 0) posMap.delete(t.code);
+          }
+          historicalCash += t.quantity * t.unitPrice * conv - (t.fees || 0);
+          break;
+        }
+        case "depot":    historicalCash += t.unitPrice; break;
+        case "retrait":  historicalCash -= t.unitPrice; break;
+        case "frais":    historicalCash -= t.unitPrice; break;
+        case "interets": historicalCash += t.unitPrice; break;
+        case "dividende": historicalCash += t.quantity * t.unitPrice * conv - (t.tax || 0) * conv; break;
+      }
+    }
+
+    const totalCost = Array.from(posMap.values()).reduce((s, p) => s + Math.max(0, p.totalCost), 0);
+    return { totalCost, cash: historicalCash };
+  }, [transactions, yearFilter, endDate]);
+
+  const isHistorical = historicalPortfolio !== null;
+  const displayCash           = isHistorical ? historicalPortfolio.cash : cash;
+  const displayTotalValue     = isHistorical ? historicalPortfolio.totalCost : totalValue;
+  const displayTotalPortfolio = isHistorical ? historicalPortfolio.totalCost + historicalPortfolio.cash : totalPortfolio;
   const realizedGainLoss          = filteredClosedPositions.reduce((sum, p) => sum + (p.gainLoss || 0), 0);
   const totalDividends            = filteredTransactions
     .filter(t => t.type === "dividende")
-    .reduce((sum, t) => sum + t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0), 0);
+    .reduce((sum, t) => sum + t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0) * t.conversionRate, 0);
   const totalGainLoss        = unrealizedGainLoss + realizedGainLoss + totalDividends;
   const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
 
@@ -174,7 +236,7 @@ export function Dashboard({
     .filter(t => t.type === "dividende")
     .reduce((acc, t) => {
       const month = new Date(t.date).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
-      const amount = t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0);
+      const amount = t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0) * t.conversionRate;
       const ex = acc.find(i => i.month === month);
       if (ex) ex.amount += amount; else acc.push({ month, amount });
       return acc;
@@ -273,11 +335,19 @@ export function Dashboard({
         ))}
       </div>
 
-      {/* Filtre dates (valorisation + performance) */}
+      {/* Filtre dates + année (valorisation + performance) */}
       {activeTab !== "trading" && (
         <Card>
           <CardContent className="pt-6">
             <div className="flex gap-3 items-center flex-wrap">
+              <select
+                value={yearFilter}
+                onChange={e => setYearFilter(e.target.value)}
+                className="border rounded px-2 py-1 text-sm bg-background text-foreground"
+              >
+                <option value="all">Toutes les années</option>
+                {availableYearsValPerf.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
               <div className="flex gap-2 items-center">
                 <label className="text-sm font-medium">Date de début :</label>
                 <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
@@ -325,13 +395,17 @@ export function Dashboard({
                 <Wallet className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(totalPortfolio)}</div>
-                <p className="text-xs text-muted-foreground">Investi : {formatCurrency(totalInvested)}</p>
+                <div className="text-2xl font-bold">{formatCurrency(displayTotalPortfolio)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {isHistorical ? "Capital investi" : "Titres"} : {formatCurrency(displayTotalValue)}
+                </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Gain/Perte latent</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Gain/Perte latent{isHistorical ? " (actuel)" : ""}
+                </CardTitle>
                 {unrealizedGainLoss >= 0 ? <TrendingUp className="h-4 w-4 text-green-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
               </CardHeader>
               <CardContent>

@@ -2,28 +2,33 @@ import { useMemo, useEffect } from "react";
 import { Dashboard } from "../components/Dashboard";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { useQuotes } from "../hooks/useQuotes";
+import { useExchangeRates } from "../hooks/useExchangeRates";
 
 export function DashboardPage() {
   const { currentData, currentPortfolio, portfolios, currentPortfolioId, refreshData } = usePortfolio();
 
-  // Refresh au montage de la page et à chaque changement de portefeuille
   useEffect(() => {
     refreshData();
   }, [currentPortfolioId]);
 
-  // Calculer le total des liquidités (consolidé ou individuel)
+  const { getConversionRate } = useExchangeRates();
+  const portfolioCurrency = currentPortfolio?.currency || "EUR";
+
+  // Liquidités : vue consolidée → conversion dans la devise du portefeuille affiché (EUR)
   const totalCash = currentPortfolioId === "ALL"
-    ? portfolios.reduce((sum, p) => sum + (p.cash || 0), 0)
+    ? portfolios.reduce((sum, p) => {
+        const rate = getConversionRate(p.currency || "EUR");
+        return sum + (p.cash || 0) / rate;
+      }, 0)
     : (currentPortfolio?.cash || 0);
 
-  // Récupérer les cours live — même logique que CurrentPositions
   const symbols = useMemo(
     () => Array.from(new Set(currentData.positions.map((p) => (p.code || "").trim().toUpperCase()).filter(Boolean))),
     [currentData.positions]
   );
   const { quotesBySymbol } = useQuotes(symbols);
 
-  // Enrichir les positions avec les cours live
+  // Positions enrichies avec cours live, valeurs converties en devise portefeuille
   const positionsWithPrices = useMemo(() => {
     return currentData.positions.map((p) => {
       const sym = (p.code || "").trim().toUpperCase();
@@ -37,14 +42,18 @@ export function DashboardPage() {
 
       if (effectivePrice === undefined || !Number.isFinite(effectivePrice)) return { ...p };
 
-      const totalValue = p.quantity * effectivePrice;
+      const posCurrency = p.currency || portfolioCurrency;
+      const isForeign = posCurrency !== portfolioCurrency;
+      const convRate = isForeign ? getConversionRate(posCurrency) : 1;
+
+      const totalValueRaw = p.quantity * effectivePrice;
+      const totalValue = convRate > 0 ? totalValueRaw / convRate : totalValueRaw;
       const latentGainLoss = totalValue - p.totalCost;
       const latentGainLossPercent = p.totalCost > 0 ? (latentGainLoss / p.totalCost) * 100 : 0;
       return { ...p, currentPrice: effectivePrice, totalValue, latentGainLoss, latentGainLossPercent };
     });
-  }, [currentData.positions, quotesBySymbol]);
+  }, [currentData.positions, quotesBySymbol, getConversionRate, portfolioCurrency]);
 
-  // totalPortfolio = valeur actuelle des positions (cours live) + liquidités
   const totalPortfolio = useMemo(() => {
     const totalValue = positionsWithPrices.reduce((sum, p) => sum + (p.totalValue || 0), 0);
     return totalValue + totalCash;
