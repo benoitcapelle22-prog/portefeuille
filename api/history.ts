@@ -8,9 +8,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const from = typeof req.query.from === "string" ? req.query.from : null;
     const to   = typeof req.query.to   === "string" ? req.query.to   : null;
+    const interval = typeof req.query.interval === "string" ? req.query.interval : "1d";
     const query = from && to
-      ? `interval=1d&period1=${Math.floor(new Date(from).getTime() / 1000)}&period2=${Math.floor(new Date(to).getTime() / 1000) + 86400}`
-      : `interval=1d&range=5y`;
+      ? `interval=${interval}&period1=${Math.floor(new Date(from).getTime() / 1000)}&period2=${Math.floor(new Date(to).getTime() / 1000) + 86400}`
+      : `interval=${interval}&range=5y`;
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${query}`;
     const response = await fetch(url, {
       headers: {

@@ -202,47 +202,49 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
   return (
     <Card>
       <CardContent>
-        {dividends.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">Aucun dividende enregistré</p>
-        ) : (
-          <div className="space-y-4 pt-4">
+        <div className="space-y-4 pt-4">
 
-            {/* Filtres communs */}
-            <div className="flex gap-2 items-center flex-wrap">
-              <div className="relative flex-1 min-w-0 w-full sm:w-auto">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Rechercher par code ou nom..."
-                  value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <select
-                value={yearFilter}
-                onChange={e => setYearFilter(e.target.value)}
-                className="border rounded px-2 py-1 text-sm bg-background text-foreground"
-              >
-                <option value="all">Toutes les années</option>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <div className="flex gap-2 items-center">
-                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
-                <span className="text-muted-foreground">-</span>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
-              </div>
-              {hasActiveFilters && (
-                <Button variant="outline" size="sm" onClick={resetFilters}>
-                  <X className="h-4 w-4 mr-1" />Réinitialiser
-                </Button>
-              )}
-              {onNewDividend && (
-                <Button size="sm" onClick={onNewDividend}>
-                  <Plus className="h-4 w-4 mr-1" />Nouveau dividende
-                </Button>
-              )}
+          {/* Filtres communs — toujours affichés */}
+          <div className="flex gap-2 items-center flex-wrap">
+            <div className="relative flex-1 min-w-0 w-full sm:w-auto">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Rechercher par code ou nom..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9"
+              />
             </div>
+            <select
+              value={yearFilter}
+              onChange={e => setYearFilter(e.target.value)}
+              className="border rounded px-2 py-1 text-sm bg-background text-foreground"
+            >
+              <option value="all">Toutes les années</option>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <div className="flex gap-2 items-center">
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
+              <span className="text-muted-foreground">-</span>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+            </div>
+            {hasActiveFilters && (
+              <Button variant="outline" size="sm" onClick={resetFilters}>
+                <X className="h-4 w-4 mr-1" />Réinitialiser
+              </Button>
+            )}
+            {onNewDividend && (
+              <Button size="sm" onClick={onNewDividend}>
+                <Plus className="h-4 w-4 mr-1" />Nouveau dividende
+              </Button>
+            )}
+          </div>
+
+          {dividends.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">Aucun dividende enregistré</p>
+          ) : (
+            <>
 
             {/* Sélecteur de vue */}
             <div className="flex gap-2 items-center">
@@ -400,8 +402,9 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
                 <p className="text-2xl font-bold text-green-600">{formatCurrency(totalNetDividends)}</p>
               </div>
             </div>
-          </div>
-        )}
+          </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

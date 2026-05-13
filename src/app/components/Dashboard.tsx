@@ -8,7 +8,7 @@ import {
   BarChart, Bar
 } from "recharts";
 import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus, Info } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -110,6 +110,108 @@ export function Dashboard({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [yearFilter, setYearFilter] = useState("all");
+  const [valuationHistory, setValuationHistory] = useState<Record<string, number>>({});
+  const [historicalMarketValue, setHistoricalMarketValue] = useState<number | null>(null);
+
+  useEffect(() => {
+    const symbols = Array.from(
+      new Set(
+        transactions
+          .filter(t => t.type === "achat" || t.type === "vente")
+          .map(t => t.code.trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+    if (symbols.length === 0) { setValuationHistory({}); return; }
+
+    const sortedTx = [...transactions]
+      .filter(t => t.type === "achat" || t.type === "vente")
+      .sort((a, b) => a.date.substring(0, 10).localeCompare(b.date.substring(0, 10)));
+    const minDate = sortedTx[0]?.date.substring(0, 10);
+    if (!minDate) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Fetch mensuel Yahoo Finance pour chaque symbole (par lots de 5)
+        const priceMap: Record<string, Record<string, number>> = {};
+        const BATCH = 5;
+        for (let i = 0; i < symbols.length; i += BATCH) {
+          if (cancelled) return;
+          await Promise.all(symbols.slice(i, i + BATCH).map(async (symbol) => {
+            try {
+              const url = import.meta.env.DEV
+                ? `/yahoo-proxy/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1mo&range=5y`
+                : `/api/history?symbol=${encodeURIComponent(symbol)}&interval=1mo`;
+              const res = await fetch(url);
+              if (!res.ok) return;
+              const data = await res.json();
+
+              let prices: { date: string; close: number }[] = [];
+              if (import.meta.env.DEV) {
+                const result = data?.chart?.result?.[0];
+                if (!result) return;
+                const ts: number[] = result.timestamp ?? [];
+                const cl: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
+                prices = ts
+                  .map((t, i) => ({ date: new Date(t * 1000).toISOString().split("T")[0], close: cl[i] as number }))
+                  .filter(p => p.close !== null && p.close !== undefined && Number.isFinite(p.close));
+              } else {
+                prices = data.prices ?? [];
+              }
+
+              priceMap[symbol] = {};
+              for (const { date, close } of prices) {
+                priceMap[symbol][date.substring(0, 10)] = close;
+              }
+            } catch { /* ignore */ }
+          }));
+        }
+
+        if (cancelled) return;
+
+        // Toutes les dates disponibles >= première transaction, triées
+        const allDates = Array.from(new Set(
+          Object.values(priceMap).flatMap(p => Object.keys(p))
+        )).filter(d => d >= minDate).sort();
+
+        if (allDates.length === 0) return;
+
+        // Replay des transactions → quantités détenues à chaque date
+        const monthMap: Record<string, number> = {};
+        const posQty: Record<string, number> = {};
+        let txIdx = 0;
+
+        for (const dateStr of allDates) {
+          while (txIdx < sortedTx.length && sortedTx[txIdx].date.substring(0, 10) <= dateStr) {
+            const t = sortedTx[txIdx];
+            const code = t.code.trim().toUpperCase();
+            posQty[code] = (posQty[code] || 0) + (t.type === "achat" ? t.quantity : -t.quantity);
+            txIdx++;
+          }
+
+          let valuation = 0;
+          let hasPrice = false;
+          for (const [sym, qty] of Object.entries(posQty)) {
+            if (qty <= 0) continue;
+            const price = priceMap[sym]?.[dateStr];
+            if (price !== undefined) { valuation += qty * price; hasPrice = true; }
+          }
+          if (!hasPrice) continue;
+
+          const month = new Date(dateStr).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+          monthMap[month] = valuation;
+        }
+
+        if (!cancelled) setValuationHistory(monthMap);
+      } catch (e) {
+        console.warn("[valuationHistory] error:", e);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [transactions]);
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -164,7 +266,7 @@ export function Dashboard({
     let historicalCash = 0;
 
     const sorted = [...transactions]
-      .filter(t => t.date <= cutoff)
+      .filter(t => t.date.substring(0, 10) <= cutoff)
       .sort((a, b) => a.date.localeCompare(b.date));
 
     for (const t of sorted) {
@@ -198,13 +300,81 @@ export function Dashboard({
     }
 
     const totalCost = Array.from(posMap.values()).reduce((s, p) => s + Math.max(0, p.totalCost), 0);
-    return { totalCost, cash: historicalCash };
+    const hPositions = Array.from(posMap.entries())
+      .filter(([, p]) => p.quantity > 0)
+      .map(([code, p]) => ({ code, quantity: p.quantity }));
+    return { totalCost, cash: historicalCash, positions: hPositions, cutoff };
   }, [transactions, yearFilter, endDate]);
+
+  useEffect(() => {
+    if (!historicalPortfolio) { setHistoricalMarketValue(null); return; }
+    const { positions: hPositions, cutoff } = historicalPortfolio;
+    if (hPositions.length === 0) { setHistoricalMarketValue(null); return; }
+
+    let cancelled = false;
+    const fromDate = new Date(cutoff);
+    fromDate.setDate(fromDate.getDate() - 7);
+    const fromStr = fromDate.toISOString().split("T")[0];
+
+    (async () => {
+      try {
+        const yearEndPrices: Record<string, number> = {};
+        const syms = hPositions.map(p => p.code.trim().toUpperCase());
+        const BATCH = 5;
+
+        for (let i = 0; i < syms.length; i += BATCH) {
+          if (cancelled) return;
+          await Promise.all(syms.slice(i, i + BATCH).map(async (symbol) => {
+            try {
+              const p1 = Math.floor(new Date(fromStr).getTime() / 1000);
+              const p2 = Math.floor(new Date(cutoff).getTime() / 1000) + 86400;
+              const url = import.meta.env.DEV
+                ? `/yahoo-proxy/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}`
+                : `/api/history?symbol=${encodeURIComponent(symbol)}&from=${fromStr}&to=${cutoff}`;
+              const res = await fetch(url);
+              if (!res.ok) return;
+              const data = await res.json();
+
+              let prices: { date: string; close: number }[] = [];
+              if (import.meta.env.DEV) {
+                const result = data?.chart?.result?.[0];
+                if (!result) return;
+                const ts: number[] = result.timestamp ?? [];
+                const cl: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
+                prices = ts.map((t, i) => ({ date: new Date(t * 1000).toISOString().split("T")[0], close: cl[i] as number }))
+                  .filter(p => p.close !== null && p.close !== undefined && Number.isFinite(p.close));
+              } else {
+                prices = data.prices ?? [];
+              }
+
+              const valid = prices.filter(p => p.date <= cutoff);
+              if (valid.length > 0) yearEndPrices[symbol] = valid[valid.length - 1].close;
+            } catch { /* ignore */ }
+          }));
+        }
+
+        if (cancelled) return;
+
+        let marketValue = 0;
+        for (const { code, quantity } of hPositions) {
+          const price = yearEndPrices[code.trim().toUpperCase()];
+          if (price !== undefined) marketValue += quantity * price;
+        }
+
+        if (!cancelled) setHistoricalMarketValue(marketValue > 0 ? marketValue : null);
+      } catch (e) {
+        console.warn("[historicalMarketValue] error:", e);
+        if (!cancelled) setHistoricalMarketValue(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [historicalPortfolio]);
 
   const isHistorical = historicalPortfolio !== null;
   const displayCash           = isHistorical ? historicalPortfolio.cash : cash;
-  const displayTotalValue     = isHistorical ? historicalPortfolio.totalCost : totalValue;
-  const displayTotalPortfolio = isHistorical ? historicalPortfolio.totalCost + historicalPortfolio.cash : totalPortfolio;
+  const displayTotalValue     = isHistorical ? (historicalMarketValue ?? historicalPortfolio.totalCost) : totalValue;
+  const displayTotalPortfolio = isHistorical ? (historicalMarketValue ?? historicalPortfolio.totalCost) + historicalPortfolio.cash : totalPortfolio;
   const realizedGainLoss          = filteredClosedPositions.reduce((sum, p) => sum + (p.gainLoss || 0), 0);
   const totalDividends            = filteredTransactions
     .filter(t => t.type === "dividende")
@@ -470,22 +640,60 @@ export function Dashboard({
                 )}
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader><CardTitle>Évolution du capital investi</CardTitle></CardHeader>
-              <CardContent>
-                {portfolioEvolution.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
-                  <div className="h-[220px] sm:h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={portfolioEvolution}>
-                        <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis />
-                        <Tooltip formatter={(v) => formatCurrency(v as number)} /><Legend />
-                        <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={2} name="Capital investi" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {(() => {
+              const currentMonthLabel = new Date().toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+              const liveTotalValue = positions.reduce((sum, p) => sum + (p.totalValue || p.totalCost), 0);
+
+              // Ajoute un point pour le mois courant si pas déjà présent dans portfolioEvolution
+              const basePoints = [...portfolioEvolution];
+              if (!basePoints.some(p => p.date === currentMonthLabel)) {
+                const lastValue = basePoints[basePoints.length - 1]?.value ?? 0;
+                basePoints.push({ date: currentMonthLabel, value: lastValue });
+              }
+
+              const chartData = basePoints.map(p => ({
+                date: p.date,
+                invested: p.value,
+                // Priorité : daily_prices historique, sinon valorisation live pour le mois courant
+                valuation: valuationHistory[p.date] ?? (p.date === currentMonthLabel ? liveTotalValue : null),
+              }));
+
+              const hasValuation = chartData.some(p => p.valuation !== null);
+
+              return (
+                <Card>
+                  <CardHeader><CardTitle>Évolution du capital et de la valorisation</CardTitle></CardHeader>
+                  <CardContent>
+                    {basePoints.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                      <>
+                        <div className="h-[220px] sm:h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="date" />
+                              <YAxis width={65} tickFormatter={(v: number) => {
+                                if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+                                if (v >= 1_000) return `${Math.round(v / 1_000)}k`;
+                                return `${v}`;
+                              }} />
+                              <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                              <Legend />
+                              <Line type="monotone" dataKey="invested" stroke="#8884d8" strokeWidth={2} name="Capital investi" dot={false} />
+                              <Line type="monotone" dataKey="valuation" stroke="#00C49F" strokeWidth={2} name="Valorisation" dot={false} connectNulls />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        {!hasValuation && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 text-center mt-2">
+                            Courbe de valorisation indisponible — lancez <strong>"Récupérer l'historique des cours"</strong> (menu Actions) pour alimenter les données.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
             <Card>
               <CardHeader><CardTitle>Dividendes reçus par mois</CardTitle></CardHeader>
               <CardContent>
