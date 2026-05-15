@@ -110,7 +110,7 @@ export function Dashboard({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [yearFilter, setYearFilter] = useState("all");
-  const [valuationHistory, setValuationHistory] = useState<Record<string, number>>({});
+  const [portfolioChart, setPortfolioChart] = useState<{ month: string; valuation: number; invested: number }[]>([]);
   const [historicalMarketValue, setHistoricalMarketValue] = useState<number | null>(null);
 
   useEffect(() => {
@@ -122,7 +122,7 @@ export function Dashboard({
           .filter(Boolean)
       )
     );
-    if (symbols.length === 0) { setValuationHistory({}); return; }
+    if (symbols.length === 0) { setPortfolioChart([]); return; }
 
     const sortedTx = [...transactions]
       .filter(t => t.type === "achat" || t.type === "vente")
@@ -130,11 +130,16 @@ export function Dashboard({
     const minDate = sortedTx[0]?.date.substring(0, 10);
     if (!minDate) return;
 
+    // Dernier taux de conversion EUR connu par symbole (approximation pour convertir les cours Yahoo)
+    const symbolConvRate: Record<string, number> = {};
+    for (const t of sortedTx) {
+      symbolConvRate[t.code.trim().toUpperCase()] = t.conversionRate || 1;
+    }
+
     let cancelled = false;
 
     (async () => {
       try {
-        // Fetch mensuel Yahoo Finance pour chaque symbole (par lots de 5)
         const priceMap: Record<string, Record<string, number>> = {};
         const BATCH = 5;
         for (let i = 0; i < symbols.length; i += BATCH) {
@@ -171,42 +176,68 @@ export function Dashboard({
 
         if (cancelled) return;
 
-        // Toutes les dates disponibles >= première transaction, triées
+        // Exclure le mois courant : Yahoo renvoie une bougie mensuelle incomplète
+        // (seulement jusqu'à aujourd'hui), ce qui crée une chute artificielle en fin de courbe.
+        // Le mois courant est toujours ajouté avec les cours live dans le rendu.
+        const currentYearMonth = new Date().toISOString().substring(0, 7);
         const allDates = Array.from(new Set(
           Object.values(priceMap).flatMap(p => Object.keys(p))
-        )).filter(d => d >= minDate).sort();
+        )).filter(d => d >= minDate && d.substring(0, 7) < currentYearMonth).sort();
 
         if (allDates.length === 0) return;
 
-        // Replay des transactions → quantités détenues à chaque date
-        const monthMap: Record<string, number> = {};
+        // Replay des transactions avec PRU correct.
+        // Les données mensuelles Yahoo sont datées au 1er du mois mais représentent
+        // le cours de clôture de fin de mois → on applique toutes les transactions du mois.
+        const result: { month: string; valuation: number; invested: number }[] = [];
         const posQty: Record<string, number> = {};
+        const posCost: Record<string, number> = {};
         let txIdx = 0;
 
         for (const dateStr of allDates) {
-          while (txIdx < sortedTx.length && sortedTx[txIdx].date.substring(0, 10) <= dateStr) {
+          const [y, m] = dateStr.split("-").map(Number);
+          const endOfMonth = new Date(y, m, 0).toISOString().split("T")[0];
+
+          while (txIdx < sortedTx.length && sortedTx[txIdx].date.substring(0, 10) <= endOfMonth) {
             const t = sortedTx[txIdx];
             const code = t.code.trim().toUpperCase();
-            posQty[code] = (posQty[code] || 0) + (t.type === "achat" ? t.quantity : -t.quantity);
+            const conv = t.conversionRate || 1;
+            if (t.type === "achat") {
+              const cost = t.quantity * t.unitPrice * conv + (t.fees || 0) * conv + (t.tff || 0) * conv;
+              posQty[code] = (posQty[code] || 0) + t.quantity;
+              posCost[code] = (posCost[code] || 0) + cost;
+            } else {
+              const qty = posQty[code] || 0;
+              const cost = posCost[code] || 0;
+              const pru = qty > 0 ? cost / qty : 0;
+              const soldQty = Math.min(t.quantity, qty);
+              posQty[code] = Math.max(0, qty - soldQty);
+              posCost[code] = Math.max(0, cost - pru * soldQty);
+            }
             txIdx++;
           }
 
           let valuation = 0;
           let hasPrice = false;
+          let invested = 0;
           for (const [sym, qty] of Object.entries(posQty)) {
             if (qty <= 0) continue;
             const price = priceMap[sym]?.[dateStr];
-            if (price !== undefined) { valuation += qty * price; hasPrice = true; }
+            // Convertir le cours en EUR (les cours Yahoo sont en devise native du titre)
+            if (price !== undefined) { valuation += qty * price * (symbolConvRate[sym] || 1); hasPrice = true; }
+            invested += posCost[sym] || 0;
           }
           if (!hasPrice) continue;
 
           const month = new Date(dateStr).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
-          monthMap[month] = valuation;
+          const existing = result.find(r => r.month === month);
+          if (existing) { existing.valuation = valuation; existing.invested = invested; }
+          else result.push({ month, valuation, invested });
         }
 
-        if (!cancelled) setValuationHistory(monthMap);
+        if (!cancelled) setPortfolioChart(result);
       } catch (e) {
-        console.warn("[valuationHistory] error:", e);
+        console.warn("[portfolioChart] error:", e);
       }
     })();
 
@@ -311,6 +342,14 @@ export function Dashboard({
     const { positions: hPositions, cutoff } = historicalPortfolio;
     if (hPositions.length === 0) { setHistoricalMarketValue(null); return; }
 
+    // Dernier taux de conversion EUR connu par symbole
+    const convRates: Record<string, number> = {};
+    for (const t of transactions) {
+      if (t.type === "achat" || t.type === "vente") {
+        convRates[t.code.trim().toUpperCase()] = t.conversionRate || 1;
+      }
+    }
+
     let cancelled = false;
     const fromDate = new Date(cutoff);
     fromDate.setDate(fromDate.getDate() - 7);
@@ -357,8 +396,9 @@ export function Dashboard({
 
         let marketValue = 0;
         for (const { code, quantity } of hPositions) {
-          const price = yearEndPrices[code.trim().toUpperCase()];
-          if (price !== undefined) marketValue += quantity * price;
+          const sym = code.trim().toUpperCase();
+          const price = yearEndPrices[sym];
+          if (price !== undefined) marketValue += quantity * price * (convRates[sym] || 1);
         }
 
         if (!cancelled) setHistoricalMarketValue(marketValue > 0 ? marketValue : null);
@@ -387,20 +427,6 @@ export function Dashboard({
     .filter(p => p.latentGainLoss !== undefined)
     .map(p => ({ name: p.code, gainLoss: p.latentGainLoss || 0, percent: p.latentGainLossPercent || 0 }))
     .sort((a, b) => b.gainLoss - a.gainLoss).slice(0, 10);
-
-  const portfolioEvolution = filteredTransactions
-    .filter(t => t.type === "achat" || t.type === "vente")
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .reduce((acc, t) => {
-      const date = new Date(t.date).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
-      const prev = acc[acc.length - 1]?.value || 0;
-      let v = prev;
-      if (t.type === "achat") v += t.quantity * t.unitPrice * t.conversionRate + t.fees * t.conversionRate + t.tff * t.conversionRate;
-      else v -= t.quantity * t.unitPrice * t.conversionRate - t.fees * t.conversionRate - t.tff * t.conversionRate;
-      const ex = acc.find(i => i.date === date);
-      if (ex) ex.value = v; else acc.push({ date, value: v });
-      return acc;
-    }, [] as { date: string; value: number }[]);
 
   const dividendsByMonth = filteredTransactions
     .filter(t => t.type === "dividende")
@@ -643,28 +669,23 @@ export function Dashboard({
             {(() => {
               const currentMonthLabel = new Date().toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
               const liveTotalValue = positions.reduce((sum, p) => sum + (p.totalValue || p.totalCost), 0);
+              const liveCostBasis  = positions.reduce((sum, p) => sum + p.totalCost, 0);
 
-              // Ajoute un point pour le mois courant si pas déjà présent dans portfolioEvolution
-              const basePoints = [...portfolioEvolution];
-              if (!basePoints.some(p => p.date === currentMonthLabel)) {
-                const lastValue = basePoints[basePoints.length - 1]?.value ?? 0;
-                basePoints.push({ date: currentMonthLabel, value: lastValue });
+              const chartData = [...portfolioChart.map(p => ({ date: p.month, invested: p.invested, valuation: p.valuation }))];
+              if (!chartData.some(p => p.date === currentMonthLabel)) {
+                chartData.push({ date: currentMonthLabel, invested: liveCostBasis, valuation: liveTotalValue });
+              } else {
+                const last = chartData[chartData.length - 1];
+                if (last.date === currentMonthLabel) { last.invested = liveCostBasis; last.valuation = liveTotalValue; }
               }
 
-              const chartData = basePoints.map(p => ({
-                date: p.date,
-                invested: p.value,
-                // Priorité : daily_prices historique, sinon valorisation live pour le mois courant
-                valuation: valuationHistory[p.date] ?? (p.date === currentMonthLabel ? liveTotalValue : null),
-              }));
-
-              const hasValuation = chartData.some(p => p.valuation !== null);
+              const hasValuation = chartData.some(p => p.valuation > 0);
 
               return (
                 <Card>
                   <CardHeader><CardTitle>Évolution du capital et de la valorisation</CardTitle></CardHeader>
                   <CardContent>
-                    {basePoints.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
+                    {chartData.length === 0 ? <p className="text-muted-foreground text-center py-8">Aucune donnée disponible</p> : (
                       <>
                         <div className="h-[220px] sm:h-[300px]">
                           <ResponsiveContainer width="100%" height="100%">

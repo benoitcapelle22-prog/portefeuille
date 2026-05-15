@@ -94,6 +94,11 @@ export function DividendDialog({
     }
   }, [open]);
 
+  // ── Suivi du portefeuille courant (dialog fermé) ───────────────
+  useEffect(() => {
+    if (!open && !isEditMode) setSelectedPortfolioId(currentPortfolio?.id);
+  }, [currentPortfolio?.id]);
+
   // ── Pré-remplissage depuis initialData ───────────────────────
   useEffect(() => {
     if (open && initialData) {

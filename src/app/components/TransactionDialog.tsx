@@ -126,6 +126,13 @@ export function TransactionDialog({
     }
   }, [open]);
 
+  // ── Suivi du portefeuille courant (dialog fermé) ───────────────
+  // Quand l'utilisateur change de portefeuille sans rouvrir le dialog,
+  // selectedPortfolioId devenait stale. Ce useEffect le synchronise immédiatement.
+  useEffect(() => {
+    if (!open && !isEditMode) setSelectedPortfolioId(currentPortfolio?.id);
+  }, [currentPortfolio?.id]);
+
   // ── Pré-remplissage depuis initialData ────────────────────────
   useEffect(() => {
     if (open && initialData) {
