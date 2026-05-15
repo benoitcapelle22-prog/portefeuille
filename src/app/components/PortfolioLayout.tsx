@@ -34,6 +34,7 @@ import {
   bulkAddTransactions,
   updatePositionQuantityAndCost,
   updatePositionStopLoss,
+  updatePositionSector,
   updatePositionManualPrice,
   DBTransaction,
   DBPosition,
@@ -76,6 +77,7 @@ export interface PortfolioContextType {
   handlePositionAction: (action: 'achat' | 'vente' | 'dividende', position: Position, portfolioId?: string) => void;
   handleUpdateCash: (amount: number, type: "deposit" | "withdrawal", date: string) => Promise<void>;
   handleUpdateStopLoss: (code: string, stopLoss: number | undefined) => Promise<void>;
+  handleUpdateSector: (code: string, sector: string | undefined) => Promise<void>;
   handleUpdateCurrentPrice: (code: string, manualCurrentPrice: number | undefined) => Promise<void>;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
@@ -1045,6 +1047,18 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
     await refreshData();
   };
 
+  const handleUpdateSector = async (code: string, sector: string | undefined) => {
+    if (!currentPortfolioId) return;
+    const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
+    for (const pid of portfolioIds) {
+      const pos = portfolioData[pid]?.positions.find(p => p.code === code);
+      if (pos) {
+        try { await updatePositionSector(pid, code, sector); } catch (e: any) { console.error(e); }
+      }
+    }
+    await refreshData();
+  };
+
   const handleUpdateCurrentPrice = async (code: string, manualCurrentPrice: number | undefined) => {
     if (!currentPortfolioId) return;
     const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
@@ -1108,6 +1122,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
     handlePositionAction,
     handleUpdateCash,
     handleUpdateStopLoss,
+    handleUpdateSector,
     handleUpdateCurrentPrice,
     dialogOpen,
     setDialogOpen,

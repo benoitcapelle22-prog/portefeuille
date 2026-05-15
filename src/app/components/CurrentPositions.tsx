@@ -1,4 +1,9 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
+
+const SECTORS = [
+  "Finance", "Technology", "Santé", "Énergie", "Industrie",
+  "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre",
+];
 import { Card, CardContent } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
@@ -80,6 +85,7 @@ interface CurrentPositionsProps {
   onUpdateCash?: (amount: number, type: "deposit" | "withdrawal" | "fees" | "interests", date: string) => void;
   portfolioCategory?: string;
   onUpdateStopLoss?: (code: string, stopLoss: number | undefined) => void;
+  onUpdateSector?: (code: string, sector: string | undefined) => void;
   onUpdateCurrentPrice?: (code: string, manualCurrentPrice: number | undefined) => void;
   portfolioId?: string;
   // ← NOUVEAU : callback pour remonter le total portefeuille valorisé au contexte
@@ -134,6 +140,7 @@ export function CurrentPositions({
   onUpdateCash,
   portfolioCategory,
   onUpdateStopLoss,
+  onUpdateSector,
   onUpdateCurrentPrice,
   portfolioId,
   onTotalPortfolioChange,
@@ -612,7 +619,22 @@ export function CurrentPositions({
                       </TableCell>
 
                       <TableCell>{position.name}</TableCell>
-                      {showSector && <TableCell>{position.sector}</TableCell>}
+                      {showSector && (
+                        <TableCell>
+                          <Select
+                            value={position.sector ?? ""}
+                            onValueChange={(v) => onUpdateSector?.(position.code, v === "__clear__" ? undefined : v)}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-[140px]">
+                              <SelectValue placeholder="—" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__clear__">—</SelectItem>
+                              {SECTORS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      )}
                       {showCurrency && <TableCell className="text-center">{positionCurrency}</TableCell>}
                       <TableCell className="text-right">{position.quantity}</TableCell>
                       <TableCell className="text-right">

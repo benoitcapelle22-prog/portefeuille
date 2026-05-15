@@ -281,6 +281,15 @@ export async function updatePositionStopLoss(portfolioId: string, code: string, 
   if (error) throw error;
 }
 
+export async function updatePositionSector(portfolioId: string, code: string, sector: string | undefined): Promise<void> {
+  const { error } = await supabase
+    .from('positions')
+    .update({ sector: sector ?? null })
+    .eq('portfolio_id', portfolioId)
+    .eq('code', code);
+  if (error) throw error;
+}
+
 export async function updatePositionManualPrice(portfolioId: string, code: string, manualCurrentPrice: number | undefined): Promise<void> {
   const { error } = await supabase
     .from('positions')

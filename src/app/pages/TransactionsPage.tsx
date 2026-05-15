@@ -16,6 +16,7 @@ export function TransactionsPage() {
     handlePositionAction,
     handleUpdateCash,
     handleUpdateStopLoss,
+    handleUpdateSector,
     handleUpdateCurrentPrice,
     portfolios,
     currentPortfolioId,
@@ -70,6 +71,7 @@ export function TransactionsPage() {
           onUpdateCash={handleUpdateCash}
           portfolioCategory={hasAnyTradingPortfolio ? "Trading" : currentPortfolio?.category}
           onUpdateStopLoss={handleUpdateStopLoss}
+          onUpdateSector={handleUpdateSector}
           onUpdateCurrentPrice={handleUpdateCurrentPrice}
           portfolioId={currentPortfolioId || undefined}
           quotesBySymbol={quotesBySymbol}
