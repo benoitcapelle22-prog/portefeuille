@@ -218,7 +218,7 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency, showSec
       const key = (t.code || "").trim().toUpperCase();
       const rowKey = Object.keys(map).find(k => k.trim().toUpperCase() === key);
       if (rowKey) {
-        const amount = t.quantity * t.unitPrice * (t.conversionRate || 1) - ((t as any).tax || 0);
+        const amount = t.quantity * t.unitPrice * (t.conversionRate || 1);
         map[rowKey].dividends += amount;
       }
     }
