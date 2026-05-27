@@ -102,6 +102,7 @@ function mapPortfolio(row: any): Portfolio {
     code: row.code,
     fees: typeof row.fees === 'string' ? JSON.parse(row.fees) : (row.fees ?? { defaultFeesPercent: 0, defaultFeesMin: 0, defaultTFF: 0 }),
     cash: Number(row.cash ?? 0),
+    position: row.position ?? 0,
   };
 }
 
@@ -110,9 +111,15 @@ function mapPortfolio(row: any): Portfolio {
 // ============================================================
 
 export async function getPortfolios(): Promise<Portfolio[]> {
-  const { data, error } = await supabase.from('portfolios').select('*').order('created_at');
+  const { data, error } = await supabase.from('portfolios').select('*').order('position').order('created_at');
   if (error) throw error;
   return (data ?? []).map(mapPortfolio);
+}
+
+export async function updatePortfoliosOrder(orderedIds: string[]): Promise<void> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await supabase.from('portfolios').update({ position: i + 1 }).eq('id', orderedIds[i]);
+  }
 }
 
 export async function createPortfolio(portfolio: Portfolio): Promise<void> {

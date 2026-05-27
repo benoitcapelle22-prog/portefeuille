@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -18,7 +18,7 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "./ui/dialog";
-import { Plus, Trash2, Settings, Edit, Wallet } from "lucide-react";
+import { Plus, Trash2, Settings, Edit, Wallet, GripVertical } from "lucide-react";
 
 export interface PortfolioFees {
   defaultFeesPercent: number; // Pourcentage des frais
@@ -33,6 +33,7 @@ export interface Portfolio {
   category: "Trading" | "Crypto" | "LT";
   currency: "EUR" | "USD" | "DKK" | "SEK";
   fees: PortfolioFees;
+  position?: number;
   cash?: number; // Liquidités disponibles
 }
 
@@ -43,6 +44,7 @@ interface PortfolioSelectorProps {
   onCreatePortfolio: (portfolio: Omit<Portfolio, "id">) => void;
   onUpdatePortfolio: (id: string, portfolio: Omit<Portfolio, "id">) => void;
   onDeletePortfolio: (id: string) => void;
+  onReorderPortfolios?: (orderedIds: string[]) => void;
 }
 
 export function PortfolioSelector({
@@ -52,11 +54,31 @@ export function PortfolioSelector({
   onCreatePortfolio,
   onUpdatePortfolio,
   onDeletePortfolio,
+  onReorderPortfolios,
 }: PortfolioSelectorProps) {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isListDialogOpen, setIsListDialogOpen] = useState(false);
   const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null);
+  const [localPortfolios, setLocalPortfolios] = useState(portfolios);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  useEffect(() => { setLocalPortfolios(portfolios); }, [portfolios]);
+
+  const handleDragStart = (idx: number) => setDragIdx(idx);
+  const handleDragOver = (e: React.DragEvent, idx: number) => { e.preventDefault(); setOverIdx(idx); };
+  const handleDrop = (idx: number) => {
+    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setOverIdx(null); return; }
+    const next = [...localPortfolios];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(idx, 0, moved);
+    setLocalPortfolios(next);
+    setDragIdx(null);
+    setOverIdx(null);
+    onReorderPortfolios?.(next.map(p => p.id));
+  };
+  const handleDragEnd = () => { setDragIdx(null); setOverIdx(null); };
   const [formData, setFormData] = useState({
     name: "",
     code: "",
@@ -362,6 +384,7 @@ export function PortfolioSelector({
                   <table className="w-full min-w-[800px]">
                     <thead>
                       <tr className="border-b bg-muted/50">
+                        <th className="w-8"></th>
                         <th className="px-3 py-2 text-left text-sm font-medium whitespace-nowrap">Nom</th>
                         <th className="px-3 py-2 text-left text-sm font-medium whitespace-nowrap">Code</th>
                         <th className="px-3 py-2 text-left text-sm font-medium whitespace-nowrap">Catégorie</th>
@@ -372,8 +395,21 @@ export function PortfolioSelector({
                       </tr>
                     </thead>
                     <tbody>
-                      {portfolios.map((portfolio) => (
-                        <tr key={portfolio.id} className="border-b last:border-0 hover:bg-muted/30">
+                      {localPortfolios.map((portfolio, i) => (
+                        <tr
+                          key={portfolio.id}
+                          draggable
+                          onDragStart={() => handleDragStart(i)}
+                          onDragOver={(e) => handleDragOver(e, i)}
+                          onDrop={() => handleDrop(i)}
+                          onDragEnd={handleDragEnd}
+                          className={`border-b last:border-0 transition-colors ${
+                            dragIdx === i ? "opacity-40" : overIdx === i && dragIdx !== i ? "border-t-2 border-primary bg-primary/5" : "hover:bg-muted/30"
+                          }`}
+                        >
+                          <td className="pl-2 py-2 cursor-grab text-muted-foreground">
+                            <GripVertical className="size-4" />
+                          </td>
                           <td className="px-3 py-2 text-sm whitespace-nowrap">{portfolio.name}</td>
                           <td className="px-3 py-2 text-sm whitespace-nowrap">{portfolio.code || '-'}</td>
                           <td className="px-3 py-2 text-sm whitespace-nowrap">

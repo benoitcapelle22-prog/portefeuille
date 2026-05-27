@@ -36,6 +36,7 @@ import {
   updatePositionStopLoss,
   updatePositionSector,
   updatePositionManualPrice,
+  updatePortfoliosOrder,
   DBTransaction,
   DBPosition,
   DBClosedPosition,
@@ -1047,6 +1048,10 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
     await refreshData();
   };
 
+  const handleReorderPortfolios = async (orderedIds: string[]) => {
+    try { await updatePortfoliosOrder(orderedIds); await refreshData(); } catch (e) { console.error(e); }
+  };
+
   const handleUpdateSector = async (code: string, sector: string | undefined) => {
     if (!currentPortfolioId) return;
     const portfolioIds = currentPortfolioId === "ALL" ? portfolios.map(p => p.id) : [currentPortfolioId];
@@ -1459,6 +1464,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
             onUpdatePortfolio={handleUpdatePortfolio}
             onDeletePortfolio={handleDeletePortfolio}
             onSelectPortfolio={setCurrentPortfolioId}
+            onReorderPortfolios={handleReorderPortfolios}
           />
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
