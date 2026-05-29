@@ -43,6 +43,17 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+function evalMathExpr(expr: string): number {
+  if (!expr.trim()) return 0;
+  const safe = expr.replace(/[^0-9+\-*/.() ]/g, '');
+  try {
+    // eslint-disable-next-line no-new-func
+    const result = Function('"use strict"; return (' + safe + ')')();
+    if (typeof result === 'number' && isFinite(result)) return result;
+  } catch {}
+  return parseFloat(expr) || 0;
+}
+
 function getCurrencySymbol(curr: string) {
   switch (curr) {
     case "EUR": return "€";  case "USD": return "$";  case "GBP": return "£";
@@ -148,7 +159,7 @@ export function DividendDialog({
   const qty      = parseFloat(quantity)       || 0;
   const div      = parseFloat(divPerShare)    || 0;
   const convRate = parseFloat(conversionRate) || 1;
-  const taxVal   = parseFloat(tax)            || 0;
+  const taxVal   = evalMathExpr(tax);
 
   const grossInCurrency = qty * div;
   const grossConverted  = isForeignCurrency ? grossInCurrency * convRate : grossInCurrency;
@@ -275,8 +286,20 @@ export function DividendDialog({
 
             <div className="space-y-1">
               <Label htmlFor="div-tax" className="text-xs">Impôt ({portSymbol})</Label>
-              <Input id="div-tax" type="number" step="0.01" placeholder="0.00" value={tax}
-                onChange={e => setTax(e.target.value)} className="h-8 text-sm" />
+              <Input id="div-tax" type="text" inputMode="decimal" placeholder="0.00" value={tax}
+                onChange={e => setTax(e.target.value)}
+                onBlur={() => {
+                  const v = evalMathExpr(tax);
+                  if (v !== 0 || tax.trim() !== "") setTax(v === 0 ? "" : String(Math.round(v * 100) / 100));
+                }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const v = evalMathExpr(tax);
+                    if (v !== 0 || tax.trim() !== "") setTax(v === 0 ? "" : String(Math.round(v * 100) / 100));
+                  }
+                }}
+                className="h-8 text-sm" />
             </div>
 
             {isForeignCurrency && (

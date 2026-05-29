@@ -37,6 +37,17 @@ type Props = {
   initialName?: string;
 };
 
+function evalMathExpr(expr: string): number {
+  if (!expr.trim()) return 0;
+  const safe = expr.replace(/[^0-9+\-*/.() ]/g, '');
+  try {
+    // eslint-disable-next-line no-new-func
+    const result = Function('"use strict"; return (' + safe + ')')();
+    if (typeof result === 'number' && isFinite(result)) return result;
+  } catch {}
+  return parseFloat(expr) || 0;
+}
+
 const BLANK: BlankDividend = {
   date: new Date().toISOString().split("T")[0],
   code: "", name: "", type: "dividende",
@@ -51,10 +62,13 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved, onCr
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | undefined>(currentPortfolioId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [taxInput, setTaxInput] = useState(String(dividend?.tax ?? 0));
 
   useEffect(() => {
     if (open) {
-      setForm(dividend ?? { ...BLANK, code: initialCode ?? "", name: initialName ?? "" });
+      const d = dividend ?? { ...BLANK, code: initialCode ?? "", name: initialName ?? "" };
+      setForm(d);
+      setTaxInput(String((d as any).tax ?? 0));
       setSelectedPortfolioId(currentPortfolioId);
       setError(null);
     }
@@ -66,7 +80,8 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved, onCr
 
   const gross = (Number(form.unitPrice) || 0) * (Number(form.quantity) || 0);
   const grossConverted = gross * (Number(form.conversionRate) || 1);
-  const taxConverted = (Number(form.tax) || 0) * (Number(form.conversionRate) || 1);
+  const taxVal = evalMathExpr(taxInput);
+  const taxConverted = taxVal * (Number(form.conversionRate) || 1);
   const netConverted = grossConverted - taxConverted;
 
   const changed = isCreateMode || JSON.stringify(form) !== JSON.stringify(initial);
@@ -86,7 +101,7 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved, onCr
           fees: 0, tff: 0,
           currency: form.currency,
           conversionRate: Number(form.conversionRate) || 1,
-          tax: Number(form.tax) || 0,
+          tax: taxVal,
         }, selectedPortfolioId);
         onOpenChange(false);
       } else {
@@ -99,7 +114,7 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved, onCr
           unit_price: Number(form.unitPrice) || 0,
           currency: form.currency,
           conversion_rate: Number(form.conversionRate) || 1,
-          tax: form.tax ?? 0,
+          tax: taxVal,
         };
 
         const { data, error } = await supabase
@@ -195,10 +210,24 @@ export function EditDividendDialog({ open, onOpenChange, dividend, onSaved, onCr
           <div className="space-y-1 md:col-span-2">
             <Label>Impôt (dans la devise du dividende)</Label>
             <Input
-              type="number"
-              step="0.01"
-              value={form.tax ?? 0}
-              onChange={e => set("tax", Number(e.target.value))}
+              type="text"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={taxInput}
+              onChange={e => setTaxInput(e.target.value)}
+              onBlur={() => {
+                const v = evalMathExpr(taxInput);
+                setTaxInput(v === 0 && taxInput.trim() === "" ? "" : String(Math.round(v * 100) / 100));
+                set("tax", v);
+              }}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const v = evalMathExpr(taxInput);
+                  setTaxInput(v === 0 && taxInput.trim() === "" ? "" : String(Math.round(v * 100) / 100));
+                  set("tax", v);
+                }
+              }}
             />
           </div>
 
