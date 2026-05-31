@@ -7,7 +7,7 @@ import { ClosedPosition } from "./ClosedPositions";
 import { TransactionDialog } from "./TransactionDialog";
 import { DividendDialog } from "./DividendDialog";
 import { ImportTransactions } from "./ImportTransactions";
-import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe, History } from "lucide-react";
+import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe, History, ClipboardList } from "lucide-react";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
@@ -37,6 +37,8 @@ import {
   updatePositionSector,
   updatePositionManualPrice,
   updatePortfoliosOrder,
+  getSwingPlans,
+  updateSwingPlanStatus,
   DBTransaction,
   DBPosition,
   DBClosedPosition,
@@ -558,6 +560,19 @@ export function PortfolioLayout() {
   // TRANSACTIONS
   // ============================================================
 
+  const updateSwingPlanOnSale = async (code: string, salePriceConverted: number) => {
+    try {
+      const plans = await getSwingPlans();
+      const matching = plans.filter(p => p.code.trim().toUpperCase() === code.trim().toUpperCase() && p.status === "déclenché");
+      for (const plan of matching) {
+        const newStatus = salePriceConverted >= plan.limitPrice ? "gagné" : "perdant";
+        await updateSwingPlanStatus(plan.id!, newStatus, salePriceConverted);
+      }
+    } catch (e) {
+      console.error("updateSwingPlanOnSale:", e);
+    }
+  };
+
   const handleAddTransaction = async (transaction: Omit<Transaction, "id">, portfolioId?: string) => {
     const targetId = portfolioId || currentPortfolioId;
     if (!targetId) return;
@@ -580,6 +595,7 @@ export function PortfolioLayout() {
       await handlePurchase(newTx, targetData, targetId);
     } else if (transaction.type === "vente") {
       await handleSale(newTx, newTransactions, targetData, targetId);
+      await updateSwingPlanOnSale(transaction.code, transaction.unitPrice * (transaction.conversionRate || 1));
     } else if (transaction.type === "dividende") {
       await handleDividend(newTx, targetId);
     }
@@ -1472,6 +1488,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
               <Link to="/"><Button variant={location.pathname === "/" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden xs:inline">Tableau de bord</span><span className="xs:hidden">Bord</span></Button></Link>
               <Link to="/transactions"><Button variant={location.pathname === "/transactions" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Receipt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />Transactions</Button></Link>
               <Link to="/calculator"><Button variant={location.pathname === "/calculator" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Calculatrice</span><span className="sm:hidden">Calc.</span></Button></Link>
+              <Link to="/trade-plan"><Button variant={location.pathname === "/trade-plan" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><ClipboardList className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Plans de trade</span><span className="sm:hidden">Plans</span></Button></Link>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

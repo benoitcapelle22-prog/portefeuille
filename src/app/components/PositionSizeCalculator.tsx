@@ -3,7 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Badge } from "./ui/badge";
-import { Calculator, TrendingUp, Shield, Target, Loader2 } from "lucide-react";
+import { Button } from "./ui/button";
+import { Calculator, TrendingUp, Target, Loader2, PlusCircle } from "lucide-react";
+import { SwingPlanDialog } from "./SwingPlanDialog";
+import { addSwingPlan } from "../db";
 
 export function PositionSizeCalculator() {
   const [capital, setCapital] = useState(() => localStorage.getItem("psc_capital") ?? "16000.00");
@@ -15,6 +18,7 @@ export function PositionSizeCalculator() {
   const [baseRiskInput, setBaseRiskInput] = useState(() => localStorage.getItem("psc_baseRisk") ?? "0.50");
   const [riskProfile, setRiskProfile] = useState<"speculatif" | "prudent" | "normal" | "agressif">("normal");
   const [fetchLoading, setFetchLoading] = useState(false);
+  const [swingDialogOpen, setSwingDialogOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
 
@@ -259,6 +263,19 @@ export function PositionSizeCalculator() {
                 <div className="text-lg font-bold">{result.lowerBound.toFixed(3)}</div>
               </div>
             </div>
+
+            {/* Bouton plan swing */}
+            <div className="flex justify-end pt-1">
+              <Button
+                variant="outline"
+                className="gap-2 border-primary/40 text-primary hover:bg-primary/5"
+                onClick={() => setSwingDialogOpen(true)}
+                disabled={!code || result.maxShares === 0}
+              >
+                <PlusCircle className="h-4 w-4" />
+                Ajouter au plan swing
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -371,6 +388,22 @@ export function PositionSizeCalculator() {
           </div>
         </CardContent>
       </Card>
+
+      <SwingPlanDialog
+        open={swingDialogOpen}
+        onOpenChange={setSwingDialogOpen}
+        initialValues={{
+          code,
+          name,
+          quantity: result.maxShares,
+          limitPrice: result.upperBound,
+          stopPrice: parseFloat(stopLoss) || 0,
+          riskAmount: result.riskAmount,
+        }}
+        onSaved={async (entry) => {
+          try { await addSwingPlan(entry); } catch (e) { console.error(e); }
+        }}
+      />
     </div>
   );
 }

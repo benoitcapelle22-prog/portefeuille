@@ -426,3 +426,70 @@ export async function getAllSettings(): Promise<Setting[]> {
   if (error) throw error;
   return data ?? [];
 }
+
+// ============================================================
+// SWING PLANS
+// ============================================================
+
+import { SwingPlanEntry } from './components/SwingPlanDialog';
+
+function mapSwingPlan(row: any): SwingPlanEntry {
+  return {
+    id: row.id,
+    date: row.date,
+    validityDate: row.validity_date,
+    code: row.code,
+    name: row.name,
+    quantity: Number(row.quantity),
+    limitPrice: Number(row.limit_price),
+    stopPrice: Number(row.stop_price),
+    riskAmount: Number(row.risk_amount),
+    tp1: row.tp1 != null ? Number(row.tp1) : null,
+    status: row.status,
+    notes: row.notes ?? null,
+    salePrice: row.sale_price != null ? Number(row.sale_price) : null,
+  };
+}
+
+export async function getSwingPlans(): Promise<SwingPlanEntry[]> {
+  const { data, error } = await supabase.from('swing_plans').select('*').order('date', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapSwingPlan);
+}
+
+export async function addSwingPlan(plan: SwingPlanEntry): Promise<void> {
+  const { error } = await supabase.from('swing_plans').insert({
+    id: crypto.randomUUID(),
+    date: plan.date,
+    validity_date: plan.validityDate,
+    code: plan.code,
+    name: plan.name,
+    quantity: plan.quantity,
+    limit_price: plan.limitPrice,
+    stop_price: plan.stopPrice,
+    risk_amount: plan.riskAmount,
+    tp1: plan.tp1 ?? null,
+    status: plan.status,
+    notes: plan.notes ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function updateSwingPlanStatus(id: string, status: SwingPlanEntry['status'], salePrice?: number): Promise<void> {
+  const { error } = await supabase.from('swing_plans').update({ status }).eq('id', id);
+  if (error) throw error;
+  if (salePrice !== undefined) {
+    // Best-effort : ignore si la colonne sale_price n'existe pas encore (migration non exécutée)
+    await supabase.from('swing_plans').update({ sale_price: salePrice }).eq('id', id);
+  }
+}
+
+export async function updateSwingPlanNotes(id: string, notes: string | null): Promise<void> {
+  const { error } = await supabase.from('swing_plans').update({ notes: notes ?? null }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteSwingPlan(id: string): Promise<void> {
+  const { error } = await supabase.from('swing_plans').delete().eq('id', id);
+  if (error) throw error;
+}

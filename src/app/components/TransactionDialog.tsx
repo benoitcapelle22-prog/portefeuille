@@ -98,6 +98,7 @@ export function TransactionDialog({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
   const rateTouchedRef = useRef(false);
+  const priceTouchedRef = useRef(false);
 
   const { getConversionRate } = useExchangeRates();
 
@@ -122,6 +123,7 @@ export function TransactionDialog({
       setSelectedPortfolioId(currentPortfolio?.id ?? initialData?.portfolioId);
       nameTouchedRef.current = false;
       rateTouchedRef.current = false;
+      priceTouchedRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
     }
   }, [open]);
@@ -140,6 +142,10 @@ export function TransactionDialog({
       if (initialData.name)     { setName(initialData.name); nameTouchedRef.current = true; }
       if (initialData.type && initialData.type !== "dividende") setType(initialData.type);
       if (initialData.quantity) setQuantity(String(initialData.quantity));
+      if (initialData.unitPrice != null && !initialData.editId) {
+        setUnitPrice(String(initialData.unitPrice));
+        priceTouchedRef.current = true;
+      }
 
       if (initialData.editId) {
         // Mode édition : pré-remplir tous les champs
@@ -197,7 +203,7 @@ export function TransactionDialog({
           fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
           fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
-        if (tickerRes?.price != null) setUnitPrice(Number(tickerRes.price).toFixed(4));
+        if (tickerRes?.price != null && !priceTouchedRef.current) setUnitPrice(Number(tickerRes.price).toFixed(4));
         if (tickerRes?.currency) {
           const apiCur = tickerRes.currency.toUpperCase() as Currency;
           const known: Currency[] = ["EUR", "USD", "GBP", "GBX", "CHF", "JPY", "CAD", "DKK", "SEK"];
