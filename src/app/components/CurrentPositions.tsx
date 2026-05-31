@@ -73,7 +73,8 @@ type SortKey =
   | "totalValue"
   | "latentGainLoss"
   | "stopLoss"
-  | "risk";
+  | "risk"
+  | "weight";
 type SortDir = "asc" | "desc";
 
 interface CurrentPositionsProps {
@@ -389,6 +390,7 @@ export function CurrentPositions({
       case "latentGainLoss": aVal = a.latentGainLoss ?? -Infinity; bVal = b.latentGainLoss ?? -Infinity; break;
       case "stopLoss": aVal = a.stopLoss ?? -Infinity; bVal = b.stopLoss ?? -Infinity; break;
       case "risk": aVal = getRisk(a) ?? -Infinity; bVal = getRisk(b) ?? -Infinity; break;
+      case "weight": aVal = getPositionEurValues(a).totalValueConverted ?? -Infinity; bVal = getPositionEurValues(b).totalValueConverted ?? -Infinity; break;
       default: aVal = ""; bVal = "";
     }
     if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, "fr") : bVal.localeCompare(aVal, "fr");
@@ -472,7 +474,8 @@ export function CurrentPositions({
     + (hasPortfolioCodeColumn ? 1 : 0)
     + (showSector ? 1 : 0)
     + (showCurrency ? 1 : 0)
-    + (portfolioCategory === "Trading" ? 2 : 0);
+    + (portfolioCategory === "Trading" ? 2 : 0)
+    + (portfolioCategory === "LT" ? 1 : 0);
 
   return (
     <Card>
@@ -566,6 +569,9 @@ export function CurrentPositions({
                   </Th>
                   <Th col="currentPrice" className="text-right w-32">Cours actuel</Th>
                   <Th col="totalValue" className="text-right">Valeur actuelle</Th>
+                  {portfolioCategory === "LT" && (
+                    <Th col="weight" className="text-right">Poids</Th>
+                  )}
                   <Th col="latentGainLoss" className="text-right w-20">
                     <span className="leading-tight">+/- Value<br />latente</span>
                   </Th>
@@ -674,6 +680,15 @@ export function CurrentPositions({
                         )}
                       </TableCell>
 
+                      {/* Poids (LT uniquement) */}
+                      {portfolioCategory === "LT" && (
+                        <TableCell className="text-right text-muted-foreground">
+                          {totalValueConverted !== undefined && totalPortfolio > 0
+                            ? `${((totalValueConverted / totalPortfolio) * 100).toFixed(1)}%`
+                            : "-"}
+                        </TableCell>
+                      )}
+
                       {/* +/- Value latente convertie */}
                       <TableCell className="text-right whitespace-nowrap">
                         <div className={latentVal >= 0 ? "text-green-600" : "text-red-600"}>
@@ -734,6 +749,11 @@ export function CurrentPositions({
                   <TableCell className="text-right">{formatCurrency(totalInvested, portfolioCurrency)}</TableCell>
                   <TableCell className="text-right"></TableCell>{/* Cours actuel */}
                   <TableCell className="text-right">{formatCurrency(totalValue, portfolioCurrency)}</TableCell>
+                  {portfolioCategory === "LT" && (
+                    <TableCell className="text-right text-muted-foreground text-sm">
+                      {totalPortfolio > 0 ? `${((totalValue / totalPortfolio) * 100).toFixed(1)}%` : "-"}
+                    </TableCell>
+                  )}
                   <TableCell className="text-right whitespace-nowrap">
                     <div className={totalLatentGainLoss >= 0 ? "text-green-600" : "text-red-600"}>
                       {formatCurrency(totalLatentGainLoss, portfolioCurrency)}
@@ -840,6 +860,11 @@ export function CurrentPositions({
                   <TableCell className="text-right font-medium">-</TableCell>{/* Montant d'entrée */}
                   <TableCell className="text-right font-medium">-</TableCell>{/* Cours actuel */}
                   <TableCell className="text-right font-medium text-blue-600">{formatCurrency(displayCash, portfolioCurrency)}</TableCell>
+                  {portfolioCategory === "LT" && (
+                    <TableCell className="text-right text-muted-foreground text-sm">
+                      {totalPortfolio > 0 ? `${((displayCash / totalPortfolio) * 100).toFixed(1)}%` : "-"}
+                    </TableCell>
+                  )}
                   <TableCell className="text-right">-</TableCell>
                   {portfolioCategory === "Trading" && (
                     <>
@@ -856,6 +881,9 @@ export function CurrentPositions({
                   <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
                   <TableCell className="text-right"></TableCell>{/* Cours actuel */}
                   <TableCell className="text-right text-lg text-green-600">{formatCurrency(totalPortfolio, portfolioCurrency)}</TableCell>
+                  {portfolioCategory === "LT" && (
+                    <TableCell className="text-right text-sm text-green-600">100%</TableCell>
+                  )}
                   <TableCell className="text-right"></TableCell>
                   {portfolioCategory === "Trading" && (
                     <>
@@ -877,6 +905,7 @@ export function CurrentPositions({
                     <TableCell className="text-right text-sm text-amber-700 dark:text-amber-400">
                       {formatCurrency(totalPortfolioInEUR, "EUR")}
                     </TableCell>
+                    {portfolioCategory === "LT" && <TableCell />}
                     <TableCell className="text-right"></TableCell>
                     {portfolioCategory === "Trading" && (
                       <>
