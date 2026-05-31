@@ -1,17 +1,41 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Badge } from "./ui/badge";
-import { Calculator, TrendingUp, Shield, Target } from "lucide-react";
+import { Calculator, TrendingUp, Shield, Target, Loader2 } from "lucide-react";
 
 export function PositionSizeCalculator() {
   const [capital, setCapital] = useState(() => localStorage.getItem("psc_capital") ?? "16000.00");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
   const [buyPrice, setBuyPrice] = useState("7.3");
   const [stopLoss, setStopLoss] = useState("6.76");
   const [riskPercent, setRiskPercent] = useState("0.50");
   const [baseRiskInput, setBaseRiskInput] = useState(() => localStorage.getItem("psc_baseRisk") ?? "0.50");
   const [riskProfile, setRiskProfile] = useState<"speculatif" | "prudent" | "normal" | "agressif">("normal");
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameTouchedRef = useRef(false);
+
+  useEffect(() => {
+    const trimmed = code.trim().toUpperCase();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!trimmed || trimmed.length < 2) { setFetchLoading(false); return; }
+    setFetchLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const [tickerRes, searchRes] = await Promise.all([
+          fetch(`/api/ticker?symbol=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`/api/yahoo-search?q=${encodeURIComponent(trimmed)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        if (tickerRes?.price != null) setBuyPrice(Number(tickerRes.price).toFixed(4));
+        const fetchedName = tickerRes?.name ?? searchRes?.name ?? null;
+        if (fetchedName && !nameTouchedRef.current) setName(fetchedName);
+      } finally { setFetchLoading(false); }
+    }, 900);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [code]);
   
   // DECOTES
   const [indexTrendUp, setIndexTrendUp] = useState(true);
@@ -145,6 +169,32 @@ export function PositionSizeCalculator() {
                   <div className="text-xs text-gray-600 dark:text-gray-300 font-normal">Risque en montant</div>
                   <div className="text-base">{formatCurrency(result.riskAmount)}</div>
                 </div>
+              </div>
+            </div>
+
+            {/* Code action + Nom */}
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold flex items-center gap-1">
+                  Code action {fetchLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: MC.PA"
+                  value={code}
+                  onChange={e => { setCode(e.target.value.toUpperCase()); nameTouchedRef.current = false; }}
+                  className="h-10 font-mono border-2"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Nom</Label>
+                <Input
+                  type="text"
+                  placeholder="Nom de l'action"
+                  value={name}
+                  onChange={e => { setName(e.target.value); nameTouchedRef.current = true; }}
+                  className="h-10 border-2"
+                />
               </div>
             </div>
 
