@@ -3,7 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
-import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Trash2, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditDividendDialog, type DividendRow } from "./EditDividendDialog";
 
@@ -11,6 +11,7 @@ interface DividendsHistoryProps {
   transactions: Transaction[];
   portfolioCurrency?: "EUR" | "USD" | "GBP" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
   onNewDividend?: () => void;
+  onDeleteDividend?: (id: string) => void;
 }
 
 type SortKey =
@@ -29,7 +30,7 @@ type SortDir = "asc" | "desc";
 
 type SortKeyByTitle = "code" | "name" | "totalAmount" | "taxAmount" | "netAmount" | "count";
 
-export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNewDividend }: DividendsHistoryProps) {
+export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNewDividend, onDeleteDividend }: DividendsHistoryProps) {
   const [view, setView] = useState<"operations" | "titres">("operations");
   const [searchFilter, setSearchFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -179,6 +180,11 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
     return sortDirTitle === "asc" ? <ChevronUp className="inline h-3 w-3 ml-1" /> : <ChevronDown className="inline h-3 w-3 ml-1" />;
   };
 
+  const handleDelete = (id: string) => {
+    setLocalTransactions(prev => prev.filter(t => t.id !== id));
+    onDeleteDividend?.(id);
+  };
+
   const openEdit = (d: any) => {
     const row: DividendRow = {
       id: d.id,
@@ -300,9 +306,14 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.taxAmount)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(dividend.netAmount)}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(dividend)}>
-                            <Pencil className="size-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(dividend)}>
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => handleDelete(dividend.id)}>
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

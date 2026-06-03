@@ -92,6 +92,7 @@ export function TransactionsPage() {
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}
           onNewDividend={() => { setDialogInitialData({ type: "dividende" }); setDialogOpen(true); }}
+          onDeleteDividend={handleDeleteTransaction}
         />
       </TabsContent>
 
