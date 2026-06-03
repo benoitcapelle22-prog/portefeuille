@@ -6,7 +6,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Calculator, TrendingUp, Target, Loader2, PlusCircle } from "lucide-react";
 import { SwingPlanDialog } from "./SwingPlanDialog";
-import { addSwingPlan } from "../db";
+import { addSwingPlan, getSetting, setSetting } from "../db";
 
 export function PositionSizeCalculator() {
   const [capital, setCapital] = useState(() => localStorage.getItem("psc_capital") ?? "16000.00");
@@ -21,6 +21,39 @@ export function PositionSizeCalculator() {
   const [swingDialogOpen, setSwingDialogOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
+  const saveCapitalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveRiskRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Chargement depuis Supabase au montage (priorité sur localStorage)
+  useEffect(() => {
+    const localCap = localStorage.getItem("psc_capital") ?? "16000.00";
+    const localRisk = localStorage.getItem("psc_baseRisk") ?? "0.50";
+    Promise.all([getSetting("calc_capital"), getSetting("calc_baseRisk")]).then(([cap, risk]) => {
+      if (cap) {
+        setCapital(cap);
+        localStorage.setItem("psc_capital", cap);
+      } else {
+        // Pas encore en base → écriture initiale depuis localStorage
+        setSetting("calc_capital", localCap).catch(console.error);
+      }
+      if (risk) {
+        setBaseRiskInput(risk);
+        localStorage.setItem("psc_baseRisk", risk);
+      } else {
+        setSetting("calc_baseRisk", localRisk).catch(console.error);
+      }
+    }).catch(console.error);
+  }, []);
+
+  const saveCapital = (value: string) => {
+    if (saveCapitalRef.current) clearTimeout(saveCapitalRef.current);
+    saveCapitalRef.current = setTimeout(() => { setSetting("calc_capital", value).catch(console.error); }, 1000);
+  };
+
+  const saveBaseRisk = (value: string) => {
+    if (saveRiskRef.current) clearTimeout(saveRiskRef.current);
+    saveRiskRef.current = setTimeout(() => { setSetting("calc_baseRisk", value).catch(console.error); }, 1000);
+  };
 
   useEffect(() => {
     const trimmed = code.trim().toUpperCase();
@@ -297,7 +330,7 @@ export function PositionSizeCalculator() {
                 type="number"
                 step="0.01"
                 value={capital}
-                onChange={(e) => { setCapital(e.target.value); localStorage.setItem("psc_capital", e.target.value); }}
+                onChange={(e) => { setCapital(e.target.value); localStorage.setItem("psc_capital", e.target.value); saveCapital(e.target.value); }}
                 className="h-12 text-right font-bold text-lg bg-cyan-100 dark:bg-cyan-900 border-2 border-cyan-300 dark:border-cyan-700"
               />
             </div>
@@ -366,7 +399,7 @@ export function PositionSizeCalculator() {
                     type="number"
                     step="0.01"
                     value={baseRiskInput}
-                    onChange={(e) => { setBaseRiskInput(e.target.value); localStorage.setItem("psc_baseRisk", e.target.value); }}
+                    onChange={(e) => { setBaseRiskInput(e.target.value); localStorage.setItem("psc_baseRisk", e.target.value); saveBaseRisk(e.target.value); }}
                     className="h-12 text-right font-bold text-lg bg-pink-100 dark:bg-pink-900 border-2 border-pink-300 dark:border-pink-700 pr-10"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-lg text-pink-600 dark:text-pink-400">%</span>
@@ -396,7 +429,7 @@ export function PositionSizeCalculator() {
           code,
           name,
           quantity: result.maxShares,
-          limitPrice: result.upperBound,
+          limitPrice: parseFloat(buyPrice) || 0,
           stopPrice: parseFloat(stopLoss) || 0,
           riskAmount: result.riskAmount,
         }}

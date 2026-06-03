@@ -38,10 +38,19 @@ interface SwingPlanDialogProps {
     stopPrice: number;
     riskAmount: number;
   };
+  editPlan?: SwingPlanEntry;
   onSaved?: (entry: SwingPlanEntry) => void;
 }
 
-export function SwingPlanDialog({ open, onOpenChange, initialValues, onSaved }: SwingPlanDialogProps) {
+export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, onSaved }: SwingPlanDialogProps) {
+  const isEditMode = !!editPlan;
+
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const validityStr = nextBusinessDay(today).toISOString().split("T")[0];
+
+  const [date, setDate] = useState(todayStr);
+  const [validityDate, setValidityDate] = useState(validityStr);
   const [code, setCode] = useState(initialValues.code);
   const [name, setName] = useState(initialValues.name);
   const [quantity, setQuantity] = useState(String(initialValues.quantity));
@@ -53,24 +62,35 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, onSaved }: 
 
   useEffect(() => {
     if (open) {
-      setCode(initialValues.code);
-      setName(initialValues.name);
-      setQuantity(String(initialValues.quantity));
-      setLimitPrice(initialValues.limitPrice.toFixed(4));
-      setStopPrice(initialValues.stopPrice.toFixed(4));
-      setTp1("");
+      if (isEditMode && editPlan) {
+        setDate(editPlan.date);
+        setValidityDate(editPlan.validityDate);
+        setCode(editPlan.code);
+        setName(editPlan.name);
+        setQuantity(String(editPlan.quantity));
+        setLimitPrice(editPlan.limitPrice.toFixed(4));
+        setStopPrice(editPlan.stopPrice.toFixed(4));
+        setTp1(editPlan.tp1 != null ? String(editPlan.tp1) : "");
+      } else {
+        setDate(todayStr);
+        setValidityDate(validityStr);
+        setCode(initialValues.code);
+        setName(initialValues.name);
+        setQuantity(String(initialValues.quantity));
+        setLimitPrice(initialValues.limitPrice.toFixed(4));
+        setStopPrice(initialValues.stopPrice.toFixed(4));
+        setTp1("");
+      }
     }
   }, [open]);
 
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
-  const validityStr = nextBusinessDay(today).toISOString().split("T")[0];
   const fmt = (s: string) => new Date(s + "T12:00:00").toLocaleDateString("fr-FR");
 
   const handleSave = () => {
     const entry: SwingPlanEntry = {
-      date: todayStr,
-      validityDate: validityStr,
+      ...(isEditMode && editPlan ? editPlan : {}),
+      date,
+      validityDate,
       code: code.trim().toUpperCase(),
       name: name.trim(),
       quantity: parseInt(quantity) || 0,
@@ -78,7 +98,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, onSaved }: 
       stopPrice: parseFloat(stopPrice) || 0,
       riskAmount: computedRisk,
       tp1: tp1.trim() ? parseFloat(tp1) : null,
-      status: "actif",
+      status: isEditMode && editPlan ? editPlan.status : "actif",
     };
     onSaved?.(entry);
     onOpenChange(false);
@@ -88,17 +108,23 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, onSaved }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Plan de swing trading</DialogTitle>
+          <DialogTitle>{isEditMode ? "Modifier le plan" : "Plan de swing trading"}</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3 py-2">
           <div className="space-y-1">
             <Label className="text-xs">Date</Label>
-            <div className="h-9 flex items-center px-3 rounded-md border bg-muted text-sm">{fmt(todayStr)}</div>
+            {isEditMode
+              ? <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9 text-sm" />
+              : <div className="h-9 flex items-center px-3 rounded-md border bg-muted text-sm">{fmt(date)}</div>
+            }
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Validité</Label>
-            <div className="h-9 flex items-center px-3 rounded-md border bg-muted text-sm">{fmt(validityStr)}</div>
+            {isEditMode
+              ? <Input type="date" value={validityDate} onChange={e => setValidityDate(e.target.value)} className="h-9 text-sm" />
+              : <div className="h-9 flex items-center px-3 rounded-md border bg-muted text-sm">{fmt(validityDate)}</div>
+            }
           </div>
 
           <div className="space-y-1">
@@ -115,7 +141,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, onSaved }: 
             <Input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} className="h-9 text-right" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Prix limite (APD)</Label>
+            <Label className="text-xs">Prix achat</Label>
             <Input type="number" step="0.0001" value={limitPrice} onChange={e => setLimitPrice(e.target.value)} className="h-9 text-right" />
           </div>
           <div className="space-y-1">
@@ -136,7 +162,9 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, onSaved }: 
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
-          <Button onClick={handleSave} disabled={!code.trim() || !name.trim()}>Ajouter au plan</Button>
+          <Button onClick={handleSave} disabled={!code.trim() || !name.trim()}>
+            {isEditMode ? "Enregistrer" : "Ajouter au plan"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

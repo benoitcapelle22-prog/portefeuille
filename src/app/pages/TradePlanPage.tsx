@@ -7,9 +7,8 @@ import { Button } from "../components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { MoreHorizontal, RefreshCw, PlusCircle, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { Input } from "../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SwingPlanEntry, SwingPlanDialog } from "../components/SwingPlanDialog";
-import { getSwingPlans, addSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss } from "../db";
+import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss } from "../db";
 import { TransactionDialog } from "../components/TransactionDialog";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { Transaction } from "../components/TransactionForm";
@@ -61,6 +60,15 @@ const STATUS_CLASS: Partial<Record<SwingPlanEntry["status"], string>> = {
   perdant: "bg-red-600 hover:bg-red-700 text-white",
 };
 
+const STATUS_PILL_ACTIVE: Record<string, string> = {
+  actif:     "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-transparent",
+  déclenché: "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100 border-transparent",
+  gagné:     "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-transparent",
+  perdant:   "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 border-transparent",
+  expiré:    "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200 border-transparent",
+  annulé:    "bg-red-200 text-red-900 dark:bg-red-950 dark:text-red-200 border-transparent",
+};
+
 function fmt(s: string) {
   return new Date(s + "T12:00:00").toLocaleDateString("fr-FR");
 }
@@ -80,6 +88,8 @@ function SwingPlanTab() {
   const [triggerPlan, setTriggerPlan] = useState<SwingPlanEntry | null>(null);
   const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editPlan, setEditPlan] = useState<SwingPlanEntry | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // Tri persisté
   type SortKey = "date" | "validityDate" | "code" | "name" | "quantity" | "limitPrice" | "stopPrice" | "riskAmount" | "tp1" | "status" | "gain" | "gainPct";
@@ -108,12 +118,14 @@ function SwingPlanTab() {
 
   // Filtres persistés
   const [search, setSearch] = useState(() => localStorage.getItem("swingFilter_search") ?? "");
-  const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem("swingFilter_status") ?? "tous");
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(() => {
+    try { const s = localStorage.getItem("swingFilter_status"); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
+  });
   const [dateFrom, setDateFrom] = useState(() => localStorage.getItem("swingFilter_from") ?? "");
   const [dateTo, setDateTo] = useState(() => localStorage.getItem("swingFilter_to") ?? "");
 
   useEffect(() => { localStorage.setItem("swingFilter_search", search); }, [search]);
-  useEffect(() => { localStorage.setItem("swingFilter_status", statusFilter); }, [statusFilter]);
+  useEffect(() => { localStorage.setItem("swingFilter_status", JSON.stringify([...statusFilter])); }, [statusFilter]);
   useEffect(() => { localStorage.setItem("swingFilter_from", dateFrom); }, [dateFrom]);
   useEffect(() => { localStorage.setItem("swingFilter_to", dateTo); }, [dateTo]);
 
@@ -168,7 +180,7 @@ function SwingPlanTab() {
       const q = search.toLowerCase();
       if (!p.code.toLowerCase().includes(q) && !p.name.toLowerCase().includes(q)) return false;
     }
-    if (statusFilter !== "tous" && p.status !== statusFilter) return false;
+    if (statusFilter.size > 0 && !statusFilter.has(p.status)) return false;
     if (dateFrom && p.date < dateFrom) return false;
     if (dateTo && p.date > dateTo) return false;
     return true;
@@ -197,15 +209,15 @@ function SwingPlanTab() {
     return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
-  const hasFilters = search !== "" || statusFilter !== "tous" || dateFrom !== "" || dateTo !== "";
-  const resetFilters = () => { setSearch(""); setStatusFilter("tous"); setDateFrom(""); setDateTo(""); };
+  const hasFilters = search !== "" || statusFilter.size > 0 || dateFrom !== "" || dateTo !== "";
+  const resetFilters = () => { setSearch(""); setStatusFilter(new Set()); setDateFrom(""); setDateTo(""); };
 
   if (loading) return <div className="py-12 text-center text-muted-foreground">Chargement…</div>;
   if (error) return <div className="py-12 text-center text-red-500">{error}</div>;
 
   return (
     <div className="space-y-3">
-      {/* Barre de filtres */}
+      {/* Barre de filtres - ligne 1 */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -216,21 +228,6 @@ function SwingPlanTab() {
             className="pl-9 h-9"
           />
         </div>
-
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-9 w-[150px]">
-            <SelectValue placeholder="Statut" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="tous">Tous les statuts</SelectItem>
-            <SelectItem value="actif">Actif</SelectItem>
-            <SelectItem value="déclenché">Déclenché</SelectItem>
-            <SelectItem value="gagné">Gagné</SelectItem>
-            <SelectItem value="perdant">Perdant</SelectItem>
-            <SelectItem value="expiré">Expiré</SelectItem>
-            <SelectItem value="annulé">Annulé</SelectItem>
-          </SelectContent>
-        </Select>
 
         <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
           className="h-9 w-36" title="Date de début" />
@@ -253,6 +250,31 @@ function SwingPlanTab() {
         </div>
       </div>
 
+      {/* Ligne 2 : filtre statuts */}
+      <div className="flex gap-1.5 items-center flex-wrap">
+        <span className="text-sm text-muted-foreground">Statut :</span>
+        {(["actif","déclenché","gagné","perdant","expiré","annulé"] as const).map(s => {
+          const active = statusFilter.has(s);
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(prev => {
+                const next = new Set(prev);
+                active ? next.delete(s) : next.add(s);
+                return next;
+              })}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                active
+                  ? STATUS_PILL_ACTIVE[s]
+                  : "border-border bg-background text-muted-foreground hover:border-muted-foreground"
+              }`}
+            >
+              {STATUS_LABELS[s]}{active && <span className="ml-1 opacity-70">×</span>}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
@@ -262,7 +284,7 @@ function SwingPlanTab() {
               <Th col="code">Code</Th>
               <Th col="name">Nom</Th>
               <Th col="quantity" className="text-right">Qté</Th>
-              <Th col="limitPrice" className="text-right">Prix limite</Th>
+              <Th col="limitPrice" className="text-right">Prix achat</Th>
               <Th col="stopPrice" className="text-right">Stop</Th>
               <Th col="riskAmount" className="text-right">Risque (€)</Th>
               <Th col="tp1" className="text-right">TP1</Th>
@@ -330,6 +352,9 @@ function SwingPlanTab() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => { setEditPlan(plan); setEditDialogOpen(true); }}>
+                        Modifier
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleTrigger(plan)}>
                         Déclencher → créer transaction
                       </DropdownMenuItem>
@@ -361,9 +386,19 @@ function SwingPlanTab() {
         onOpenChange={setCreateDialogOpen}
         initialValues={{ code: "", name: "", quantity: 0, limitPrice: 0, stopPrice: 0, riskAmount: 0 }}
         onSaved={async entry => {
+          try { await addSwingPlan(entry); await load(); } catch (e) { console.error(e); }
+        }}
+      />
+
+      <SwingPlanDialog
+        open={editDialogOpen}
+        onOpenChange={open => { setEditDialogOpen(open); if (!open) setEditPlan(null); }}
+        initialValues={{ code: "", name: "", quantity: 0, limitPrice: 0, stopPrice: 0, riskAmount: 0 }}
+        editPlan={editPlan ?? undefined}
+        onSaved={async entry => {
           try {
-            await addSwingPlan(entry);
-            await load();
+            await updateSwingPlan(entry);
+            setPlans(prev => prev.map(p => p.id === entry.id ? { ...p, ...entry } : p));
           } catch (e) { console.error(e); }
         }}
       />

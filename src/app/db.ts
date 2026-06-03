@@ -484,6 +484,21 @@ export async function updateSwingPlanStatus(id: string, status: SwingPlanEntry['
   }
 }
 
+export async function updateSwingPlan(plan: SwingPlanEntry): Promise<void> {
+  const { error } = await supabase.from('swing_plans').update({
+    date: plan.date,
+    validity_date: plan.validityDate,
+    code: plan.code,
+    name: plan.name,
+    quantity: plan.quantity,
+    limit_price: plan.limitPrice,
+    stop_price: plan.stopPrice,
+    risk_amount: plan.riskAmount,
+    tp1: plan.tp1 ?? null,
+  }).eq('id', plan.id!);
+  if (error) throw error;
+}
+
 export async function updateSwingPlanNotes(id: string, notes: string | null): Promise<void> {
   const { error } = await supabase.from('swing_plans').update({ notes: notes ?? null }).eq('id', id);
   if (error) throw error;
