@@ -213,7 +213,18 @@ function SwingPlanTab() {
   const resetFilters = () => { setSearch(""); setStatusFilter(new Set()); setDateFrom(""); setDateTo(""); };
 
   if (loading) return <div className="py-12 text-center text-muted-foreground">Chargement…</div>;
-  if (error) return <div className="py-12 text-center text-red-500">{error}</div>;
+  if (error) return (
+    <div className="py-12 text-center space-y-2">
+      <div className="text-red-500">{error}</div>
+      <Button variant="outline" size="sm" onClick={load}>Réessayer</Button>
+    </div>
+  );
+  if (plans.length === 0) return (
+    <div className="py-12 text-center space-y-3 text-muted-foreground">
+      <div>Aucun plan chargé depuis la base de données.</div>
+      <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-3 w-3 mr-1" />Actualiser</Button>
+    </div>
+  );
 
   return (
     <div className="space-y-3">
@@ -299,7 +310,9 @@ function SwingPlanTab() {
             {sortedFilteredPlans.length === 0 && (
               <TableRow>
                 <TableCell colSpan={14} className="text-center py-10 text-muted-foreground">
-                  {hasFilters ? "Aucun plan ne correspond aux filtres." : "Aucun plan de swing trading. Utilisez la calculatrice pour en créer un."}
+                  {hasFilters
+                    ? <span>Aucun plan ne correspond aux filtres. <button className="underline text-primary" onClick={resetFilters}>Réinitialiser les filtres</button> ({plans.length} plan{plans.length > 1 ? "s" : ""} en base)</span>
+                    : "Aucun plan de swing trading. Utilisez la calculatrice pour en créer un."}
                 </TableCell>
               </TableRow>
             )}
