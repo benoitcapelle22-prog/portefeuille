@@ -901,7 +901,7 @@ export function Dashboard({
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="metric" />
                           <YAxis allowDecimals={false} />
-                          <Tooltip />
+                          <RechartsTooltip />
                           <Legend />
                           <Bar dataKey="n1" name={String(N1)} fill="#94a3b8" radius={[4,4,0,0]} />
                           <Bar dataKey="n"  name={String(N)}  fill="#0088FE" radius={[4,4,0,0]} />
@@ -924,7 +924,7 @@ export function Dashboard({
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="metric" />
                           <YAxis />
-                          <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                          <RechartsTooltip formatter={(v) => formatCurrency(v as number)} />
                           <Legend />
                           <Bar dataKey="n1" name={String(N1)} fill="#94a3b8" radius={[4,4,0,0]} />
                           <Bar dataKey="n"  name={String(N)}  fill="#00C49F" radius={[4,4,0,0]} />
@@ -947,7 +947,10 @@ export function Dashboard({
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="month" />
                           <YAxis />
-                          <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                          <RechartsTooltip
+                            formatter={(v: number | null) => v !== null ? formatCurrency(v) : "—"}
+                            labelFormatter={(label) => String(label)}
+                          />
                           <Legend />
                           <Line type="monotone" dataKey={String(N1)} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls={false} />
                           <Line type="monotone" dataKey={String(N)}  stroke="#0088FE" strokeWidth={2} dot={false} connectNulls={false} />
