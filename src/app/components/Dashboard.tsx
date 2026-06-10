@@ -469,6 +469,16 @@ export function Dashboard({
   const cumulN  = cumulByMonth(closedPositions, N);
   const cumulN1 = cumulByMonth(closedPositions, N1);
 
+  const grossDividendsN = transactions
+    .filter(t => t.type === "dividende" && getYear(t.date) === N)
+    .reduce((sum, t) => sum + t.quantity * t.unitPrice * (t.conversionRate || 1), 0);
+  const grossDividendsN1 = transactions
+    .filter(t => t.type === "dividende" && getYear(t.date) === N1)
+    .reduce((sum, t) => sum + t.quantity * t.unitPrice * (t.conversionRate || 1), 0);
+
+  const ratioAdjN  = sN.losses  > 0 ? (sN.gains  + grossDividendsN)  / sN.losses  : (sN.gains  + grossDividendsN)  > 0 ? Infinity : 0;
+  const ratioAdjN1 = sN1.losses > 0 ? (sN1.gains + grossDividendsN1) / sN1.losses : (sN1.gains + grossDividendsN1) > 0 ? Infinity : 0;
+
   // Pour l'année N en cours : null sur les mois pas encore écoulés
   const todayMonth = new Date().getMonth(); // 0-based
   const isCurrentYear = N === new Date().getFullYear();
@@ -499,10 +509,11 @@ export function Dashboard({
     { label: "Trades gagnants",   vN: sN.successful,   vN1: sN1.successful,   fmt: (v: number) => String(v),            higherIsBetter: true  },
     { label: "Trades perdants",   vN: sN.failed,       vN1: sN1.failed,       fmt: (v: number) => String(v),            higherIsBetter: false },
     { label: "Taux de réussite",  vN: sN.successRate,  vN1: sN1.successRate,  fmt: (v: number) => `${v.toFixed(1)}%`,   higherIsBetter: true  },
-    { label: "Ratio Gain/Perte",  vN: sN.ratio === Infinity ? 999 : sN.ratio, vN1: sN1.ratio === Infinity ? 999 : sN1.ratio, fmt: (v: number) => v >= 999 ? "∞" : v.toFixed(2), higherIsBetter: true },
-    { label: "Gains totaux",      vN: sN.gains,        vN1: sN1.gains,        fmt: formatCurrency,                      higherIsBetter: true  },
-    { label: "Pertes totales",    vN: sN.losses,       vN1: sN1.losses,       fmt: formatCurrency,                      higherIsBetter: false },
-    { label: "Gains/Pertes net",  vN: sN.gains - sN.losses, vN1: sN1.gains - sN1.losses, fmt: formatCurrency,             higherIsBetter: true  },
+    { label: "Ratio Gain/Perte",  vN: ratioAdjN === Infinity ? 999 : ratioAdjN, vN1: ratioAdjN1 === Infinity ? 999 : ratioAdjN1, fmt: (v: number) => v >= 999 ? "∞" : v.toFixed(2), higherIsBetter: true },
+    { label: "Gains totaux",      vN: sN.gains,         vN1: sN1.gains,         fmt: formatCurrency,                      higherIsBetter: true  },
+    { label: "Pertes totales",    vN: sN.losses,        vN1: sN1.losses,        fmt: formatCurrency,                      higherIsBetter: false },
+    { label: "Dividendes bruts",  vN: grossDividendsN,  vN1: grossDividendsN1,  fmt: formatCurrency,                      higherIsBetter: true  },
+    { label: "Gains/Pertes net",  vN: sN.gains - sN.losses + grossDividendsN, vN1: sN1.gains - sN1.losses + grossDividendsN1, fmt: formatCurrency, higherIsBetter: true  },
     { label: "Gain moyen",        vN: sN.avgGain,      vN1: sN1.avgGain,      fmt: formatCurrency,                      higherIsBetter: true  },
     { label: "Perte moyenne",     vN: sN.avgLoss,      vN1: sN1.avgLoss,      fmt: formatCurrency,                      higherIsBetter: false },
   ];
@@ -790,7 +801,7 @@ export function Dashboard({
             {[
               { label: "Nb trades",        vN: sN.totalTrades,  vN1: sN1.totalTrades,  fmt: (v: number) => String(v),          hib: true  },
               { label: "Taux de réussite", vN: sN.successRate,  vN1: sN1.successRate,  fmt: (v: number) => `${v.toFixed(1)}%`, hib: true  },
-              { label: "Ratio G/P",        vN: sN.ratio === Infinity ? 999 : sN.ratio, vN1: sN1.ratio === Infinity ? 999 : sN1.ratio, fmt: (v: number) => v >= 999 ? "∞" : v.toFixed(2), hib: true },
+              { label: "Ratio G/P",        vN: ratioAdjN === Infinity ? 999 : ratioAdjN, vN1: ratioAdjN1 === Infinity ? 999 : ratioAdjN1, fmt: (v: number) => v >= 999 ? "∞" : v.toFixed(2), hib: true },
               { label: "Gain moyen",       vN: sN.avgGain,      vN1: sN1.avgGain,      fmt: formatCurrency,                    hib: true  },
               { label: "Perte moyenne",    vN: sN.avgLoss,      vN1: sN1.avgLoss,      fmt: formatCurrency,                    hib: false },
             ].map(({ label, vN, vN1, fmt, hib }) => {
@@ -806,7 +817,7 @@ export function Dashboard({
                             <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                           </TooltipTrigger>
                           <TooltipContent className="max-w-56 text-center">
-                            Un ratio de 2 signifie que vous avez gagné 2€ pour chaque euro perdu (sur positions clôturées uniquement).
+                            Un ratio de 2 signifie que vous avez gagné 2€ (plus-values + dividendes bruts) pour chaque euro perdu (sur positions clôturées).
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -852,7 +863,7 @@ export function Dashboard({
                                     <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                                   </TooltipTrigger>
                                   <TooltipContent className="max-w-56 text-center">
-                                    Un ratio de 2 signifie que vous avez gagné 2€ pour chaque euro perdu (sur positions clôturées uniquement).
+                                    Un ratio de 2 signifie que vous avez gagné 2€ (plus-values + dividendes bruts) pour chaque euro perdu (sur positions clôturées).
                                   </TooltipContent>
                                 </Tooltip>
                               )}
