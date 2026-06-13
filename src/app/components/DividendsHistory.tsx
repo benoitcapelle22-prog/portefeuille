@@ -398,6 +398,7 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
               open={editOpen}
               onOpenChange={setEditOpen}
               dividend={editing}
+              portfolioCurrency={portfolioCurrency}
               onSaved={(updated) => {
                 setLocalTransactions(prev => prev.map(t => (t.id === updated.id ? (updated as any) : t)));
               }}
