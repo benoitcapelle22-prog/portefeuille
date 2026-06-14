@@ -296,6 +296,7 @@ function SwingPlanTab() {
               <Th col="name">Nom</Th>
               <Th col="quantity" className="text-right">Qté</Th>
               <Th col="limitPrice" className="text-right">Prix achat</Th>
+              <TableHead className="text-right">APD</TableHead>
               <Th col="stopPrice" className="text-right">Stop</Th>
               <Th col="riskAmount" className="text-right">Risque (€)</Th>
               <Th col="tp1" className="text-right">TP1</Th>
@@ -309,7 +310,7 @@ function SwingPlanTab() {
           <TableBody>
             {sortedFilteredPlans.length === 0 && (
               <TableRow>
-                <TableCell colSpan={14} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={15} className="text-center py-10 text-muted-foreground">
                   {hasFilters
                     ? <span>Aucun plan ne correspond aux filtres. <button className="underline text-primary" onClick={resetFilters}>Réinitialiser les filtres</button> ({plans.length} plan{plans.length > 1 ? "s" : ""} en base)</span>
                     : "Aucun plan de swing trading. Utilisez la calculatrice pour en créer un."}
@@ -324,6 +325,7 @@ function SwingPlanTab() {
                 <TableCell className="max-w-[180px] truncate">{plan.name}</TableCell>
                 <TableCell className="text-right">{plan.quantity}</TableCell>
                 <TableCell className="text-right font-medium">{fmtNum(plan.limitPrice)}</TableCell>
+                <TableCell className="text-right text-amber-600">{fmtNum(plan.apd)}</TableCell>
                 <TableCell className="text-right text-red-600">{fmtNum(plan.stopPrice)}</TableCell>
                 <TableCell className="text-right">{fmtNum(plan.riskAmount, 2)}</TableCell>
                 <TableCell className="text-right text-green-600">{fmtNum(plan.tp1)}</TableCell>

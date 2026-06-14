@@ -432,6 +432,7 @@ export function PositionSizeCalculator() {
           limitPrice: parseFloat(buyPrice) || 0,
           stopPrice: parseFloat(stopLoss) || 0,
           riskAmount: result.riskAmount,
+          apd: result.upperBound || undefined,
         }}
         onSaved={async (entry) => {
           try { await addSwingPlan(entry); } catch (e) { console.error(e); }

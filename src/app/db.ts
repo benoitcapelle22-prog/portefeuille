@@ -445,6 +445,7 @@ function mapSwingPlan(row: any): SwingPlanEntry {
     stopPrice: Number(row.stop_price),
     riskAmount: Number(row.risk_amount),
     tp1: row.tp1 != null ? Number(row.tp1) : null,
+    apd: row.apd != null ? Number(row.apd) : null,
     status: row.status,
     notes: row.notes ?? null,
     salePrice: row.sale_price != null ? Number(row.sale_price) : null,
@@ -469,6 +470,7 @@ export async function addSwingPlan(plan: SwingPlanEntry): Promise<void> {
     stop_price: plan.stopPrice,
     risk_amount: plan.riskAmount,
     tp1: plan.tp1 ?? null,
+    apd: plan.apd ?? null,
     status: plan.status,
     notes: plan.notes ?? null,
   });
@@ -495,6 +497,7 @@ export async function updateSwingPlan(plan: SwingPlanEntry): Promise<void> {
     stop_price: plan.stopPrice,
     risk_amount: plan.riskAmount,
     tp1: plan.tp1 ?? null,
+    apd: plan.apd ?? null,
   }).eq('id', plan.id!);
   if (error) throw error;
 }

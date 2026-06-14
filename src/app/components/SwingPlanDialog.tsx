@@ -15,6 +15,7 @@ export interface SwingPlanEntry {
   stopPrice: number;
   riskAmount: number;
   tp1: number | null;
+  apd?: number | null;
   status: "actif" | "déclenché" | "expiré" | "annulé" | "gagné" | "perdant";
   notes?: string | null;
   salePrice?: number | null;
@@ -37,6 +38,7 @@ interface SwingPlanDialogProps {
     limitPrice: number;
     stopPrice: number;
     riskAmount: number;
+    apd?: number;
   };
   editPlan?: SwingPlanEntry;
   onSaved?: (entry: SwingPlanEntry) => void;
@@ -57,6 +59,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
   const [limitPrice, setLimitPrice] = useState(initialValues.limitPrice.toFixed(4));
   const [stopPrice, setStopPrice] = useState(initialValues.stopPrice.toFixed(4));
   const [tp1, setTp1] = useState("");
+  const [apd, setApd] = useState(initialValues.apd != null ? initialValues.apd.toFixed(4) : "");
 
   const computedRisk = (parseInt(quantity) || 0) * Math.max(0, (parseFloat(limitPrice) || 0) - (parseFloat(stopPrice) || 0));
 
@@ -71,6 +74,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
         setLimitPrice(editPlan.limitPrice.toFixed(4));
         setStopPrice(editPlan.stopPrice.toFixed(4));
         setTp1(editPlan.tp1 != null ? String(editPlan.tp1) : "");
+        setApd(editPlan.apd != null ? String(editPlan.apd) : "");
       } else {
         setDate(todayStr);
         setValidityDate(validityStr);
@@ -80,6 +84,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
         setLimitPrice(initialValues.limitPrice.toFixed(4));
         setStopPrice(initialValues.stopPrice.toFixed(4));
         setTp1("");
+        setApd(initialValues.apd != null ? initialValues.apd.toFixed(4) : "");
       }
     }
   }, [open]);
@@ -98,6 +103,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
       stopPrice: parseFloat(stopPrice) || 0,
       riskAmount: computedRisk,
       tp1: tp1.trim() ? parseFloat(tp1) : null,
+      apd: apd.trim() ? parseFloat(apd) : null,
       status: isEditMode && editPlan ? editPlan.status : "actif",
     };
     onSaved?.(entry);
@@ -145,6 +151,10 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
             <Input type="number" step="0.0001" value={limitPrice} onChange={e => setLimitPrice(e.target.value)} className="h-9 text-right" />
           </div>
           <div className="space-y-1">
+            <Label className="text-xs">APD</Label>
+            <Input type="number" step="0.0001" placeholder="—" value={apd} onChange={e => setApd(e.target.value)} className="h-9 text-right" />
+          </div>
+          <div className="space-y-1">
             <Label className="text-xs">Stop</Label>
             <Input type="number" step="0.0001" value={stopPrice} onChange={e => setStopPrice(e.target.value)} className="h-9 text-right" />
           </div>
@@ -154,7 +164,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
               {new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(computedRisk)} €
             </div>
           </div>
-          <div className="space-y-1 col-span-2">
+          <div className="space-y-1">
             <Label className="text-xs">TP1</Label>
             <Input type="number" step="0.0001" placeholder="—" value={tp1} onChange={e => setTp1(e.target.value)} className="h-9 text-right" />
           </div>
