@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Card, CardContent } from "../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
-import { MoreHorizontal, RefreshCw, PlusCircle, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { MoreHorizontal, RefreshCw, PlusCircle, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, TrendingUp, Clock } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { SwingPlanEntry, SwingPlanDialog } from "../components/SwingPlanDialog";
 import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss } from "../db";
@@ -302,7 +301,6 @@ function SwingPlanTab() {
               <Th col="tp1" className="text-right">TP1</Th>
               <Th col="status">Statut</Th>
               <Th col="gain" className="text-right">Gain (€)</Th>
-              <Th col="gainPct" className="text-right">Gain %</Th>
               <TableHead>Commentaire</TableHead>
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
@@ -310,7 +308,7 @@ function SwingPlanTab() {
           <TableBody>
             {sortedFilteredPlans.length === 0 && (
               <TableRow>
-                <TableCell colSpan={15} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={14} className="text-center py-10 text-muted-foreground">
                   {hasFilters
                     ? <span>Aucun plan ne correspond aux filtres. <button className="underline text-primary" onClick={resetFilters}>Réinitialiser les filtres</button> ({plans.length} plan{plans.length > 1 ? "s" : ""} en base)</span>
                     : "Aucun plan de swing trading. Utilisez la calculatrice pour en créer un."}
@@ -343,14 +341,16 @@ function SwingPlanTab() {
                     : null;
                   const cls = gain != null ? (gain >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium") : "text-muted-foreground";
                   return (
-                    <>
-                      <TableCell className={`text-right ${cls}`}>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <div className={cls}>
                         {gain != null ? `${gain >= 0 ? "+" : ""}${fmtNum(gain, 2)} €` : "—"}
-                      </TableCell>
-                      <TableCell className={`text-right ${cls}`}>
-                        {gainPct != null ? `${gainPct >= 0 ? "+" : ""}${gainPct.toFixed(2)}%` : "—"}
-                      </TableCell>
-                    </>
+                      </div>
+                      {gainPct != null && (
+                        <div className="text-xs text-muted-foreground">
+                          {`${gainPct >= 0 ? "+" : ""}${gainPct.toFixed(2)}%`}
+                        </div>
+                      )}
+                    </TableCell>
                   );
                 })()}
                 <TableCell className="min-w-[160px]">
@@ -440,25 +440,38 @@ function SwingPlanTab() {
 }
 
 export function TradePlanPage() {
+  const [activeTab, setActiveTab] = useState("swing");
+
+  const tabs = [
+    { key: "swing", label: "Plan swing trading", icon: TrendingUp, iconClass: "text-emerald-500" },
+    { key: "lt",    label: "Plan long terme",     icon: Clock,       iconClass: "text-sky-500" },
+  ];
+
   return (
-    <div className="p-4 space-y-4">
-      <h1 className="text-xl font-bold">Suivi de plan de trade</h1>
-      <Tabs defaultValue="swing">
-        <TabsList>
-          <TabsTrigger value="swing">Plan swing trading</TabsTrigger>
-          <TabsTrigger value="lt">Plan long terme</TabsTrigger>
-        </TabsList>
-        <TabsContent value="swing" className="mt-4">
-          <SwingPlanTab />
-        </TabsContent>
-        <TabsContent value="lt" className="mt-4">
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              Plan long terme — à venir
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b">
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t.key
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            <t.icon className={`h-4 w-4 ${t.iconClass}`} />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "swing" && <SwingPlanTab />}
+
+      {activeTab === "lt" && (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            Plan long terme — à venir
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

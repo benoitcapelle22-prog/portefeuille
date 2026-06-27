@@ -85,12 +85,14 @@ function calcStats(closed: ClosedPosition[], year: number) {
 
 const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
 
-function cumulByMonth(closed: ClosedPosition[], year: number): { month: string; value: number }[] {
+function cumulByMonth(closed: ClosedPosition[], transactions: Transaction[], year: number): { month: string; value: number }[] {
   const result: { month: string; value: number }[] = [];
   let cumul = 0;
   for (let m = 0; m < 12; m++) {
     const trades = closed.filter(p => getYear(p.saleDate) === year && getMonth(p.saleDate) === m);
     cumul += trades.reduce((s, p) => s + (p.gainLoss || 0), 0);
+    const divs = transactions.filter(t => t.type === "dividende" && getYear(t.date) === year && getMonth(t.date) === m);
+    cumul += divs.reduce((s, t) => s + t.quantity * t.unitPrice * (t.conversionRate || 1), 0);
     result.push({ month: MONTH_LABELS[m], value: cumul });
   }
   return result;
@@ -466,8 +468,8 @@ export function Dashboard({
   const sN  = calcStats(closedPositions, N);
   const sN1 = calcStats(closedPositions, N1);
 
-  const cumulN  = cumulByMonth(closedPositions, N);
-  const cumulN1 = cumulByMonth(closedPositions, N1);
+  const cumulN  = cumulByMonth(closedPositions, transactions, N);
+  const cumulN1 = cumulByMonth(closedPositions, transactions, N1);
 
   const grossDividendsN = transactions
     .filter(t => t.type === "dividende" && getYear(t.date) === N)

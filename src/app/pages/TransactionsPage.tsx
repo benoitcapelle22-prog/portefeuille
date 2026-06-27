@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { Briefcase, Archive, Coins, History } from "lucide-react";
 import { CurrentPositions } from "../components/CurrentPositions";
 import { ClosedPositions } from "../components/ClosedPositions";
 import { TransactionHistory } from "../components/TransactionHistory";
@@ -52,16 +52,30 @@ export function TransactionsPage() {
       }, 0)
     : (currentPortfolio?.cash || 0);
 
-  return (
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
-        <TabsTrigger value="positions" className="text-xs sm:text-sm py-2">Positions en cours</TabsTrigger>
-        <TabsTrigger value="cloturees" className="text-xs sm:text-sm py-2">Pos. clôturées</TabsTrigger>
-        <TabsTrigger value="dividendes" className="text-xs sm:text-sm py-2">Dividendes</TabsTrigger>
-        <TabsTrigger value="historique" className="text-xs sm:text-sm py-2">Historique</TabsTrigger>
-      </TabsList>
+  const tabs = [
+    { key: "positions",  label: "Positions en cours", icon: Briefcase, iconClass: "text-blue-500" },
+    { key: "cloturees",  label: "Pos. clôturées",     icon: Archive,   iconClass: "text-amber-500" },
+    { key: "dividendes", label: "Dividendes",          icon: Coins,     iconClass: "text-green-500" },
+    { key: "historique", label: "Historique",          icon: History,   iconClass: "text-violet-500" },
+  ];
 
-      <TabsContent value="positions">
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b">
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t.key
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            <t.icon className={`h-4 w-4 ${t.iconClass}`} />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "positions" && (
         <CurrentPositions
           positions={currentData.positions}
           portfolioCurrency={displayCurrency}
@@ -77,26 +91,26 @@ export function TransactionsPage() {
           quotesBySymbol={quotesBySymbol}
           onNewTransaction={() => { setDialogInitialData({}); setDialogOpen(true); }}
         />
-      </TabsContent>
+      )}
 
-      <TabsContent value="cloturees">
+      {activeTab === "cloturees" && (
         <ClosedPositions
           closedPositions={currentData.closedPositions}
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}
         />
-      </TabsContent>
+      )}
 
-      <TabsContent value="dividendes">
+      {activeTab === "dividendes" && (
         <DividendsHistory
           transactions={currentData.transactions}
           portfolioCurrency={displayCurrency}
           onNewDividend={() => { setDialogInitialData({ type: "dividende" }); setDialogOpen(true); }}
           onDeleteDividend={handleDeleteTransaction}
         />
-      </TabsContent>
+      )}
 
-      <TabsContent value="historique">
+      {activeTab === "historique" && (
         <TransactionHistory
           transactions={currentData.transactions}
           onDeleteTransaction={handleDeleteTransaction}
@@ -106,7 +120,7 @@ export function TransactionsPage() {
           currentPortfolio={currentPortfolio}
           currentPortfolioId={currentPortfolioId || undefined}
         />
-      </TabsContent>
-    </Tabs>
+      )}
+    </div>
   );
 }
