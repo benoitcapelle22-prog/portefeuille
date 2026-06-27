@@ -14,7 +14,7 @@ const SECTORS = [
   "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre",
 ];
 
-const SECTOR_MAP: Record<string, string> = {
+export const SECTOR_MAP: Record<string, string> = {
   "Technology": "Technology", "Information Technology": "Technology",
   "Financial Services": "Finance", "Finance": "Finance", "Banking": "Finance", "Insurance": "Finance",
   "Healthcare": "Santé", "Health Care": "Santé", "Biotechnology": "Santé", "Pharmaceuticals": "Santé",

@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Card, CardContent } from "../components/ui/card";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -7,10 +6,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { MoreHorizontal, RefreshCw, PlusCircle, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, TrendingUp, Clock } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { SwingPlanEntry, SwingPlanDialog } from "../components/SwingPlanDialog";
-import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss } from "../db";
+import { LTPlanEntry, LTPlanDialog } from "../components/LTPlanDialog";
+import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss, getLTPlans, addLTPlan, updateLTPlan, deleteLTPlan } from "../db";
 import { TransactionDialog } from "../components/TransactionDialog";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { Transaction } from "../components/TransactionForm";
+import { useQuotes } from "../hooks/useQuotes";
 
 function NotesInput({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -439,6 +440,232 @@ function SwingPlanTab() {
   );
 }
 
+function LTPlanTab() {
+  const [plans, setPlans] = useState<LTPlanEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editPlan, setEditPlan] = useState<LTPlanEntry | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
+  const symbols = useMemo(
+    () => Array.from(new Set(plans.map(p => (p.code || "").trim().toUpperCase()).filter(Boolean))),
+    [plans]
+  );
+  const { quotesBySymbol, updatedAt } = useQuotes(symbols);
+
+  type SortKey = "date" | "code" | "name" | "sector" | "buyZone1" | "buyZone2" | "buyZone3" | "closePrice";
+  type SortDir = "asc" | "desc";
+  const [sortKey, setSortKey] = useState<SortKey>(() => (localStorage.getItem("ltSort_key") as SortKey) ?? "date");
+  const [sortDir, setSortDir] = useState<SortDir>(() => (localStorage.getItem("ltSort_dir") as SortDir) ?? "desc");
+
+  useEffect(() => { localStorage.setItem("ltSort_key", sortKey); }, [sortKey]);
+  useEffect(() => { localStorage.setItem("ltSort_dir", sortDir); }, [sortDir]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ChevronsUpDown className="inline h-3 w-3 ml-1 text-muted-foreground" />;
+    return sortDir === "asc" ? <ChevronUp className="inline h-3 w-3 ml-1" /> : <ChevronDown className="inline h-3 w-3 ml-1" />;
+  };
+
+  const Th = ({ col, children, className = "" }: { col: SortKey; children: React.ReactNode; className?: string }) => (
+    <TableHead className={`cursor-pointer select-none hover:bg-muted/50 whitespace-nowrap ${className}`} onClick={() => handleSort(col)}>
+      {children}<SortIcon col={col} />
+    </TableHead>
+  );
+
+  const [search, setSearch] = useState(() => localStorage.getItem("ltFilter_search") ?? "");
+  useEffect(() => { localStorage.setItem("ltFilter_search", search); }, [search]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setPlans(await getLTPlans());
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (id: string) => {
+    await deleteLTPlan(id);
+    setPlans(prev => prev.filter(p => p.id !== id));
+  };
+
+  const filteredPlans = plans.filter(p => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q);
+  });
+
+  const sortedFilteredPlans = [...filteredPlans].sort((a, b) => {
+    let aVal: any, bVal: any;
+    switch (sortKey) {
+      case "date":        aVal = a.date;        bVal = b.date;        break;
+      case "code":        aVal = a.code;        bVal = b.code;        break;
+      case "name":        aVal = a.name;        bVal = b.name;        break;
+      case "sector":      aVal = a.sector ?? ""; bVal = b.sector ?? ""; break;
+      case "buyZone1":    aVal = a.buyZone1 ?? -Infinity; bVal = b.buyZone1 ?? -Infinity; break;
+      case "buyZone2":    aVal = a.buyZone2 ?? -Infinity; bVal = b.buyZone2 ?? -Infinity; break;
+      case "buyZone3":    aVal = a.buyZone3 ?? -Infinity; bVal = b.buyZone3 ?? -Infinity; break;
+      case "closePrice": {
+        const ga = quotesBySymbol[a.code.toUpperCase()]?.price ?? a.closePrice ?? -Infinity;
+        const gb = quotesBySymbol[b.code.toUpperCase()]?.price ?? b.closePrice ?? -Infinity;
+        aVal = ga; bVal = gb;
+        break;
+      }
+      default:            aVal = ""; bVal = "";
+    }
+    if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, "fr") : bVal.localeCompare(aVal, "fr");
+    return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+  });
+
+  const hasFilters = search !== "";
+
+  if (loading) return <div className="py-12 text-center text-muted-foreground">Chargement…</div>;
+  if (error) return (
+    <div className="py-12 text-center space-y-2">
+      <div className="text-red-500">{error}</div>
+      <Button variant="outline" size="sm" onClick={load}>Réessayer</Button>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Rechercher code ou nom…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+
+        {hasFilters && (
+          <Button variant="outline" size="sm" className="h-9" onClick={() => setSearch("")}>
+            <X className="h-3 w-3 mr-1" /> Réinitialiser
+          </Button>
+        )}
+
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" size="sm" className="h-9" onClick={load}>
+            <RefreshCw className="h-3 w-3 mr-1" /> Actualiser
+          </Button>
+          <Button size="sm" className="h-9" onClick={() => setCreateDialogOpen(true)}>
+            <PlusCircle className="h-3 w-3 mr-1" /> Nouveau plan
+          </Button>
+        </div>
+      </div>
+
+      {updatedAt && (
+        <div className="text-xs text-muted-foreground">
+          Cours mis à jour à {new Date(updatedAt).toLocaleTimeString("fr-FR")}
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <Th col="date">Date</Th>
+              <Th col="code">Code</Th>
+              <Th col="name">Nom</Th>
+              <Th col="sector">Secteur</Th>
+              <Th col="buyZone1" className="text-right">Zone achat 1</Th>
+              <Th col="buyZone2" className="text-right">Zone achat 2</Th>
+              <Th col="buyZone3" className="text-right">Zone achat 3</Th>
+              <Th col="closePrice" className="text-right">Cours de clôture</Th>
+              <TableHead className="text-center">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedFilteredPlans.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
+                  {hasFilters
+                    ? <span>Aucun plan ne correspond aux filtres. <button className="underline text-primary" onClick={() => setSearch("")}>Réinitialiser les filtres</button></span>
+                    : "Aucun plan long terme. Cliquez sur Nouveau plan pour en créer un."}
+                </TableCell>
+              </TableRow>
+            )}
+            {sortedFilteredPlans.map(plan => (
+              <TableRow key={plan.id}>
+                <TableCell className="whitespace-nowrap">{fmt(plan.date)}</TableCell>
+                <TableCell className="font-mono font-medium">{plan.code}</TableCell>
+                <TableCell className="max-w-[180px] truncate">{plan.name}</TableCell>
+                <TableCell>{plan.sector ?? "—"}</TableCell>
+                <TableCell className="text-right">{fmtNum(plan.buyZone1)}</TableCell>
+                <TableCell className="text-right">{fmtNum(plan.buyZone2)}</TableCell>
+                <TableCell className="text-right">{fmtNum(plan.buyZone3)}</TableCell>
+                {(() => {
+                  const livePrice = quotesBySymbol[plan.code.toUpperCase()]?.price ?? undefined;
+                  const effectivePrice = livePrice ?? plan.closePrice ?? null;
+                  return (
+                    <TableCell className="text-right font-medium">
+                      <div className="flex flex-col items-end gap-0.5">
+                        {fmtNum(effectivePrice)}
+                        {livePrice != null && <span className="text-[10px] text-muted-foreground">live</span>}
+                      </div>
+                    </TableCell>
+                  );
+                })()}
+                <TableCell className="text-center">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="h-8 w-8 p-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => { setEditPlan(plan); setEditDialogOpen(true); }}>
+                        Modifier
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(plan.id!)}>
+                        Supprimer
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <LTPlanDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onSaved={async entry => {
+          try { await addLTPlan(entry); await load(); } catch (e) { console.error(e); }
+        }}
+      />
+
+      <LTPlanDialog
+        open={editDialogOpen}
+        onOpenChange={open => { setEditDialogOpen(open); if (!open) setEditPlan(null); }}
+        editPlan={editPlan ?? undefined}
+        onSaved={async entry => {
+          try {
+            await updateLTPlan(entry);
+            setPlans(prev => prev.map(p => p.id === entry.id ? { ...p, ...entry } : p));
+          } catch (e) { console.error(e); }
+        }}
+      />
+    </div>
+  );
+}
+
 export function TradePlanPage() {
   const [activeTab, setActiveTab] = useState("swing");
 
@@ -465,13 +692,7 @@ export function TradePlanPage() {
 
       {activeTab === "swing" && <SwingPlanTab />}
 
-      {activeTab === "lt" && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            Plan long terme — à venir
-          </CardContent>
-        </Card>
-      )}
+      {activeTab === "lt" && <LTPlanTab />}
     </div>
   );
 }

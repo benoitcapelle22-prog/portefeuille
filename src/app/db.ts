@@ -511,3 +511,63 @@ export async function deleteSwingPlan(id: string): Promise<void> {
   const { error } = await supabase.from('swing_plans').delete().eq('id', id);
   if (error) throw error;
 }
+
+// ============================================================
+// LT PLANS
+// ============================================================
+
+import { LTPlanEntry } from './components/LTPlanDialog';
+
+function mapLTPlan(row: any): LTPlanEntry {
+  return {
+    id: row.id,
+    date: row.date,
+    code: row.code,
+    name: row.name,
+    sector: row.sector ?? null,
+    buyZone1: row.buy_zone_1 != null ? Number(row.buy_zone_1) : null,
+    buyZone2: row.buy_zone_2 != null ? Number(row.buy_zone_2) : null,
+    buyZone3: row.buy_zone_3 != null ? Number(row.buy_zone_3) : null,
+    closePrice: row.close_price != null ? Number(row.close_price) : null,
+  };
+}
+
+export async function getLTPlans(): Promise<LTPlanEntry[]> {
+  const { data, error } = await supabase.from('lt_plans').select('*').order('date', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapLTPlan);
+}
+
+export async function addLTPlan(plan: LTPlanEntry): Promise<void> {
+  const { error } = await supabase.from('lt_plans').insert({
+    id: crypto.randomUUID(),
+    date: plan.date,
+    code: plan.code,
+    name: plan.name,
+    sector: plan.sector ?? null,
+    buy_zone_1: plan.buyZone1 ?? null,
+    buy_zone_2: plan.buyZone2 ?? null,
+    buy_zone_3: plan.buyZone3 ?? null,
+    close_price: plan.closePrice ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function updateLTPlan(plan: LTPlanEntry): Promise<void> {
+  const { error } = await supabase.from('lt_plans').update({
+    date: plan.date,
+    code: plan.code,
+    name: plan.name,
+    sector: plan.sector ?? null,
+    buy_zone_1: plan.buyZone1 ?? null,
+    buy_zone_2: plan.buyZone2 ?? null,
+    buy_zone_3: plan.buyZone3 ?? null,
+    close_price: plan.closePrice ?? null,
+  }).eq('id', plan.id!);
+  if (error) throw error;
+}
+
+export async function deleteLTPlan(id: string): Promise<void> {
+  const { error } = await supabase.from('lt_plans').delete().eq('id', id);
+  if (error) throw error;
+}
