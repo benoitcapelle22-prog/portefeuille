@@ -1466,8 +1466,8 @@ const recalcCashFromDB = async (portfolioId: string) => {
 
   return (
     <PortfolioContext.Provider value={contextValue}>
-      <div className="min-h-screen bg-background p-3 sm:p-4 md:p-6">
-        <div className="max-w-screen-2xl mx-auto space-y-4 md:space-y-6">
+      <div className="min-h-screen bg-background p-3 sm:p-6 md:p-8">
+        <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
           <div className="flex items-center gap-3">
             <TrendingUp className="size-6 sm:size-8 text-primary shrink-0" />
             <h1 className="text-lg sm:text-2xl md:text-3xl leading-tight">Suivi de Portefeuille Boursier</h1>

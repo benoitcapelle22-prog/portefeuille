@@ -32,7 +32,7 @@ function NotesInput({ value, onSave }: { value: string; onSave: (v: string) => v
       placeholder="—"
       onBlur={commit}
       onKeyDown={e => { if (e.key === "Enter") { commit(); (e.target as HTMLInputElement).blur(); } }}
-      className="w-full min-w-[80px] border rounded px-2 py-1 text-xs bg-background"
+      className="w-full min-w-[140px] border rounded px-2 py-1 text-sm bg-background"
     />
   );
 }
@@ -286,8 +286,8 @@ function SwingPlanTab() {
         })}
       </div>
 
-      <div className="rounded-md border">
-        <Table className="text-xs">
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
           <TableHeader>
             <TableRow>
               <Th col="date">Date</Th>
@@ -295,13 +295,13 @@ function SwingPlanTab() {
               <Th col="code">Code</Th>
               <Th col="name">Nom</Th>
               <Th col="quantity" className="text-right">Qté</Th>
-              <Th col="limitPrice" className="text-right">P. achat</Th>
+              <Th col="limitPrice" className="text-right">Prix achat</Th>
               <TableHead className="text-right">APD</TableHead>
               <Th col="stopPrice" className="text-right">Stop</Th>
-              <Th col="riskAmount" className="text-right">Risque €</Th>
+              <Th col="riskAmount" className="text-right">Risque (€)</Th>
               <Th col="tp1" className="text-right">TP1</Th>
               <Th col="status">Statut</Th>
-              <Th col="gain" className="text-right">Gain €</Th>
+              <Th col="gain" className="text-right">Gain (€)</Th>
               <Th col="gainPct" className="text-right">Gain %</Th>
               <TableHead>Commentaire</TableHead>
               <TableHead className="text-center">Actions</TableHead>
@@ -319,16 +319,16 @@ function SwingPlanTab() {
             )}
             {sortedFilteredPlans.map(plan => (
               <TableRow key={plan.id} className={plan.status === "expiré" || plan.status === "annulé" ? "opacity-50" : ""}>
-                <TableCell className="whitespace-nowrap py-2">{fmt(plan.date)}</TableCell>
-                <TableCell className="whitespace-nowrap py-2">{fmt(plan.validityDate)}</TableCell>
-                <TableCell className="font-mono font-medium py-2">{plan.code}</TableCell>
-                <TableCell className="max-w-[140px] truncate py-2">{plan.name}</TableCell>
-                <TableCell className="text-right py-2">{plan.quantity}</TableCell>
-                <TableCell className="text-right font-medium py-2">{fmtNum(plan.limitPrice)}</TableCell>
-                <TableCell className="text-right text-amber-600 py-2">{fmtNum(plan.apd)}</TableCell>
-                <TableCell className="text-right text-red-600 py-2">{fmtNum(plan.stopPrice)}</TableCell>
-                <TableCell className="text-right py-2">{fmtNum(plan.riskAmount, 2)}</TableCell>
-                <TableCell className="text-right text-green-600 py-2">{fmtNum(plan.tp1)}</TableCell>
+                <TableCell className="whitespace-nowrap">{fmt(plan.date)}</TableCell>
+                <TableCell className="whitespace-nowrap">{fmt(plan.validityDate)}</TableCell>
+                <TableCell className="font-mono font-medium">{plan.code}</TableCell>
+                <TableCell className="max-w-[180px] truncate">{plan.name}</TableCell>
+                <TableCell className="text-right">{plan.quantity}</TableCell>
+                <TableCell className="text-right font-medium">{fmtNum(plan.limitPrice)}</TableCell>
+                <TableCell className="text-right text-amber-600">{fmtNum(plan.apd)}</TableCell>
+                <TableCell className="text-right text-red-600">{fmtNum(plan.stopPrice)}</TableCell>
+                <TableCell className="text-right">{fmtNum(plan.riskAmount, 2)}</TableCell>
+                <TableCell className="text-right text-green-600">{fmtNum(plan.tp1)}</TableCell>
                 <TableCell>
                   <Badge variant={STATUS_VARIANTS[plan.status]} className={STATUS_CLASS[plan.status] ?? ""}>
                     {STATUS_LABELS[plan.status]}
@@ -353,7 +353,7 @@ function SwingPlanTab() {
                     </>
                   );
                 })()}
-                <TableCell className="py-2">
+                <TableCell className="min-w-[160px]">
                   <NotesInput
                     value={plan.notes ?? ""}
                     onSave={v => handleNotes(plan.id!, v)}
