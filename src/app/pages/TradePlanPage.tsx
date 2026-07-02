@@ -440,6 +440,26 @@ function SwingPlanTab() {
   );
 }
 
+function zoneGap(plan: LTPlanEntry, price: number | null): { pct: number | null; inZone: number | null } {
+  if (price == null) return { pct: null, inZone: null };
+  let bestGap: number | null = null;
+  const zones: [number, number | null, number | null][] = [
+    [1, plan.buyZone1Low, plan.buyZone1High],
+    [2, plan.buyZone2Low, plan.buyZone2High],
+    [3, plan.buyZone3Low, plan.buyZone3High],
+  ];
+  for (const [zoneNum, z1, z2] of zones) {
+    const vals = [z1, z2].filter((v): v is number => v != null);
+    if (vals.length === 0) continue;
+    const haute = Math.max(...vals);
+    const basse = vals.length > 1 ? Math.min(...vals) : haute;
+    if (price >= basse && price <= haute) return { pct: 0, inZone: zoneNum };
+    const gap = (price - haute) / haute * 100;
+    if (bestGap === null || Math.abs(gap) < Math.abs(bestGap)) bestGap = gap;
+  }
+  return { pct: bestGap, inZone: null };
+}
+
 function LTPlanTab() {
   const [plans, setPlans] = useState<LTPlanEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -454,7 +474,7 @@ function LTPlanTab() {
   );
   const { quotesBySymbol, updatedAt } = useQuotes(symbols);
 
-  type SortKey = "date" | "code" | "name" | "sector" | "buyZone1Low" | "buyZone2Low" | "buyZone3Low" | "closePrice";
+  type SortKey = "date" | "code" | "name" | "sector" | "buyZone1Low" | "buyZone2Low" | "buyZone3Low" | "closePrice" | "gap";
   type SortDir = "asc" | "desc";
   const [sortKey, setSortKey] = useState<SortKey>(() => (localStorage.getItem("ltSort_key") as SortKey) ?? "date");
   const [sortDir, setSortDir] = useState<SortDir>(() => (localStorage.getItem("ltSort_dir") as SortDir) ?? "desc");
@@ -522,6 +542,13 @@ function LTPlanTab() {
         aVal = ga; bVal = gb;
         break;
       }
+      case "gap": {
+        const pa = quotesBySymbol[a.code.toUpperCase()]?.price ?? a.closePrice ?? null;
+        const pb = quotesBySymbol[b.code.toUpperCase()]?.price ?? b.closePrice ?? null;
+        aVal = zoneGap(a, pa).pct ?? Infinity;
+        bVal = zoneGap(b, pb).pct ?? Infinity;
+        break;
+      }
       default:            aVal = ""; bVal = "";
     }
     if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal, "fr") : bVal.localeCompare(aVal, "fr");
@@ -585,13 +612,14 @@ function LTPlanTab() {
               <Th col="buyZone2Low" className="text-right">Zone 2</Th>
               <Th col="buyZone3Low" className="text-right">Zone 3</Th>
               <Th col="closePrice" className="text-right">Cours de clôture</Th>
+              <Th col="gap" className="text-right">Écart zone</Th>
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedFilteredPlans.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
                   {hasFilters
                     ? <span>Aucun plan ne correspond aux filtres. <button className="underline text-primary" onClick={() => setSearch("")}>Réinitialiser les filtres</button></span>
                     : "Aucun plan long terme. Cliquez sur Nouveau plan pour en créer un."}
@@ -629,13 +657,34 @@ function LTPlanTab() {
                 {(() => {
                   const livePrice = quotesBySymbol[plan.code.toUpperCase()]?.price ?? undefined;
                   const effectivePrice = livePrice ?? plan.closePrice ?? null;
+                  const { pct, inZone } = zoneGap(plan, effectivePrice);
+
+                  const gapCell = (() => {
+                    if (effectivePrice == null || (pct == null && inZone == null))
+                      return <TableCell className="text-right text-muted-foreground">—</TableCell>;
+                    if (inZone !== null)
+                      return <TableCell className="text-right"><span className="text-emerald-600 font-semibold text-xs">Zone {inZone} ✓</span></TableCell>;
+                    const cls = pct == null ? "text-muted-foreground"
+                      : pct > 5  ? "text-muted-foreground"
+                      : pct > 0  ? "text-amber-600 font-semibold"
+                      :            "text-purple-600 font-semibold";
+                    return (
+                      <TableCell className={`text-right ${cls}`}>
+                        {pct != null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "—"}
+                      </TableCell>
+                    );
+                  })();
+
                   return (
-                    <TableCell className="text-right font-medium">
-                      <div className="flex flex-col items-end gap-0.5">
-                        {fmtNum(effectivePrice)}
-                        {livePrice != null && <span className="text-[10px] text-muted-foreground">live</span>}
-                      </div>
-                    </TableCell>
+                    <>
+                      <TableCell className="text-right font-medium">
+                        <div className="flex flex-col items-end gap-0.5">
+                          {fmtNum(effectivePrice)}
+                          {livePrice != null && <span className="text-[10px] text-muted-foreground">live</span>}
+                        </div>
+                      </TableCell>
+                      {gapCell}
+                    </>
                   );
                 })()}
                 <TableCell className="text-center">
