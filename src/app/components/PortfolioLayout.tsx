@@ -8,6 +8,7 @@ import { TransactionDialog } from "./TransactionDialog";
 import { DividendDialog } from "./DividendDialog";
 import { ImportTransactions } from "./ImportTransactions";
 import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe, History, ClipboardList } from "lucide-react";
+import { NotificationCenter } from "./NotificationCenter";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
@@ -1493,6 +1494,8 @@ const recalcCashFromDB = async (portfolioId: string) => {
 
             <div className="flex flex-wrap items-center gap-2">
               <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleImport} />
+
+              <NotificationCenter />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

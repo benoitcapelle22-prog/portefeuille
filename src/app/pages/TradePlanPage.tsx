@@ -454,7 +454,7 @@ function LTPlanTab() {
   );
   const { quotesBySymbol, updatedAt } = useQuotes(symbols);
 
-  type SortKey = "date" | "code" | "name" | "sector" | "buyZone1" | "buyZone2" | "buyZone3" | "closePrice";
+  type SortKey = "date" | "code" | "name" | "sector" | "buyZone1Low" | "buyZone2Low" | "buyZone3Low" | "closePrice";
   type SortDir = "asc" | "desc";
   const [sortKey, setSortKey] = useState<SortKey>(() => (localStorage.getItem("ltSort_key") as SortKey) ?? "date");
   const [sortDir, setSortDir] = useState<SortDir>(() => (localStorage.getItem("ltSort_dir") as SortDir) ?? "desc");
@@ -513,9 +513,9 @@ function LTPlanTab() {
       case "code":        aVal = a.code;        bVal = b.code;        break;
       case "name":        aVal = a.name;        bVal = b.name;        break;
       case "sector":      aVal = a.sector ?? ""; bVal = b.sector ?? ""; break;
-      case "buyZone1":    aVal = a.buyZone1 ?? -Infinity; bVal = b.buyZone1 ?? -Infinity; break;
-      case "buyZone2":    aVal = a.buyZone2 ?? -Infinity; bVal = b.buyZone2 ?? -Infinity; break;
-      case "buyZone3":    aVal = a.buyZone3 ?? -Infinity; bVal = b.buyZone3 ?? -Infinity; break;
+      case "buyZone1Low": aVal = a.buyZone1Low ?? -Infinity; bVal = b.buyZone1Low ?? -Infinity; break;
+      case "buyZone2Low": aVal = a.buyZone2Low ?? -Infinity; bVal = b.buyZone2Low ?? -Infinity; break;
+      case "buyZone3Low": aVal = a.buyZone3Low ?? -Infinity; bVal = b.buyZone3Low ?? -Infinity; break;
       case "closePrice": {
         const ga = quotesBySymbol[a.code.toUpperCase()]?.price ?? a.closePrice ?? -Infinity;
         const gb = quotesBySymbol[b.code.toUpperCase()]?.price ?? b.closePrice ?? -Infinity;
@@ -581,9 +581,9 @@ function LTPlanTab() {
               <Th col="code">Code</Th>
               <Th col="name">Nom</Th>
               <Th col="sector">Secteur</Th>
-              <Th col="buyZone1" className="text-right">Zone achat 1</Th>
-              <Th col="buyZone2" className="text-right">Zone achat 2</Th>
-              <Th col="buyZone3" className="text-right">Zone achat 3</Th>
+              <Th col="buyZone1Low" className="text-right">Zone 1</Th>
+              <Th col="buyZone2Low" className="text-right">Zone 2</Th>
+              <Th col="buyZone3Low" className="text-right">Zone 3</Th>
               <Th col="closePrice" className="text-right">Cours de clôture</Th>
               <TableHead className="text-center">Actions</TableHead>
             </TableRow>
@@ -604,9 +604,28 @@ function LTPlanTab() {
                 <TableCell className="font-mono font-medium">{plan.code}</TableCell>
                 <TableCell className="max-w-[180px] truncate">{plan.name}</TableCell>
                 <TableCell>{plan.sector ?? "—"}</TableCell>
-                <TableCell className="text-right">{fmtNum(plan.buyZone1)}</TableCell>
-                <TableCell className="text-right">{fmtNum(plan.buyZone2)}</TableCell>
-                <TableCell className="text-right">{fmtNum(plan.buyZone3)}</TableCell>
+                {([
+                  [plan.buyZone1Low, plan.buyZone1High, plan.buyZone1Target],
+                  [plan.buyZone2Low, plan.buyZone2High, plan.buyZone2Target],
+                  [plan.buyZone3Low, plan.buyZone3High, plan.buyZone3Target],
+                ] as [number|null, number|null, number|null][]).map(([ low, high, target ], i) => {
+                  const vals = [low, high].filter((v): v is number => v != null);
+                  const top    = vals.length ? Math.max(...vals) : null;
+                  const bottom = vals.length > 1 ? Math.min(...vals) : null;
+                  return (
+                    <TableCell key={i} className="text-right whitespace-nowrap">
+                      {top != null ? (
+                        <div className="text-xs text-muted-foreground">
+                          {fmtNum(top)}{bottom != null ? ` – ${fmtNum(bottom)}` : ""}
+                        </div>
+                      ) : null}
+                      {target != null
+                        ? <div className="font-medium text-sky-600">{fmtNum(target)}</div>
+                        : (top == null ? <div>—</div> : null)
+                      }
+                    </TableCell>
+                  );
+                })}
                 {(() => {
                   const livePrice = quotesBySymbol[plan.code.toUpperCase()]?.price ?? undefined;
                   const effectivePrice = livePrice ?? plan.closePrice ?? null;

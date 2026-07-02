@@ -14,9 +14,15 @@ export interface LTPlanEntry {
   code: string;
   name: string;
   sector?: string | null;
-  buyZone1: number | null;
-  buyZone2: number | null;
-  buyZone3: number | null;
+  buyZone1Low: number | null;
+  buyZone1High: number | null;
+  buyZone1Target: number | null;
+  buyZone2Low: number | null;
+  buyZone2High: number | null;
+  buyZone2Target: number | null;
+  buyZone3Low: number | null;
+  buyZone3High: number | null;
+  buyZone3Target: number | null;
   closePrice: number | null;
 }
 
@@ -27,6 +33,15 @@ interface LTPlanDialogProps {
   onSaved?: (entry: LTPlanEntry) => void;
 }
 
+function numStr(v: number | null | undefined) {
+  return v != null ? String(v) : "";
+}
+
+function parseNum(s: string): number | null {
+  const t = s.trim();
+  return t ? parseFloat(t) : null;
+}
+
 export function LTPlanDialog({ open, onOpenChange, editPlan, onSaved }: LTPlanDialogProps) {
   const isEditMode = !!editPlan;
   const todayStr = new Date().toISOString().split("T")[0];
@@ -35,11 +50,18 @@ export function LTPlanDialog({ open, onOpenChange, editPlan, onSaved }: LTPlanDi
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [sector, setSector] = useState("");
-  const [buyZone1, setBuyZone1] = useState("");
-  const [buyZone2, setBuyZone2] = useState("");
-  const [buyZone3, setBuyZone3] = useState("");
-  const [fetchLoading, setFetchLoading] = useState(false);
 
+  const [z1Low, setZ1Low] = useState("");
+  const [z1High, setZ1High] = useState("");
+  const [z1Target, setZ1Target] = useState("");
+  const [z2Low, setZ2Low] = useState("");
+  const [z2High, setZ2High] = useState("");
+  const [z2Target, setZ2Target] = useState("");
+  const [z3Low, setZ3Low] = useState("");
+  const [z3High, setZ3High] = useState("");
+  const [z3Target, setZ3Target] = useState("");
+
+  const [fetchLoading, setFetchLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameTouchedRef = useRef(false);
 
@@ -50,23 +72,27 @@ export function LTPlanDialog({ open, onOpenChange, editPlan, onSaved }: LTPlanDi
         setCode(editPlan.code);
         setName(editPlan.name);
         setSector(editPlan.sector ?? "");
-        setBuyZone1(editPlan.buyZone1 != null ? String(editPlan.buyZone1) : "");
-        setBuyZone2(editPlan.buyZone2 != null ? String(editPlan.buyZone2) : "");
-        setBuyZone3(editPlan.buyZone3 != null ? String(editPlan.buyZone3) : "");
+        setZ1Low(numStr(editPlan.buyZone1Low));
+        setZ1High(numStr(editPlan.buyZone1High));
+        setZ1Target(numStr(editPlan.buyZone1Target));
+        setZ2Low(numStr(editPlan.buyZone2Low));
+        setZ2High(numStr(editPlan.buyZone2High));
+        setZ2Target(numStr(editPlan.buyZone2Target));
+        setZ3Low(numStr(editPlan.buyZone3Low));
+        setZ3High(numStr(editPlan.buyZone3High));
+        setZ3Target(numStr(editPlan.buyZone3Target));
       } else {
         setDate(todayStr);
-        setCode("");
-        setName("");
-        setSector("");
-        setBuyZone1("");
-        setBuyZone2("");
-        setBuyZone3("");
+        setCode(""); setName(""); setSector("");
+        setZ1Low(""); setZ1High(""); setZ1Target("");
+        setZ2Low(""); setZ2High(""); setZ2Target("");
+        setZ3Low(""); setZ3High(""); setZ3Target("");
         nameTouchedRef.current = false;
       }
     }
   }, [open]);
 
-  // ── Auto-fetch nom + secteur depuis le code (création uniquement) ──
+  // Auto-fetch nom + secteur depuis le code (création uniquement)
   useEffect(() => {
     if (isEditMode) return;
     const trimmed = code.trim().toUpperCase();
@@ -98,18 +124,49 @@ export function LTPlanDialog({ open, onOpenChange, editPlan, onSaved }: LTPlanDi
       code: code.trim().toUpperCase(),
       name: name.trim(),
       sector: sector || null,
-      buyZone1: buyZone1.trim() ? parseFloat(buyZone1) : null,
-      buyZone2: buyZone2.trim() ? parseFloat(buyZone2) : null,
-      buyZone3: buyZone3.trim() ? parseFloat(buyZone3) : null,
+      buyZone1Low: parseNum(z1Low),
+      buyZone1High: parseNum(z1High),
+      buyZone1Target: parseNum(z1Target),
+      buyZone2Low: parseNum(z2Low),
+      buyZone2High: parseNum(z2High),
+      buyZone2Target: parseNum(z2Target),
+      buyZone3Low: parseNum(z3Low),
+      buyZone3High: parseNum(z3High),
+      buyZone3Target: parseNum(z3Target),
       closePrice: isEditMode && editPlan ? editPlan.closePrice : null,
     };
     onSaved?.(entry);
     onOpenChange(false);
   };
 
+  const zoneInputs = (
+    label: string,
+    low: string, setLow: (v: string) => void,
+    high: string, setHigh: (v: string) => void,
+    target: string, setTarget: (v: string) => void,
+  ) => (
+    <div className="col-span-2 space-y-1.5">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1">{label}</div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Borne basse</Label>
+          <Input type="number" step="0.0001" placeholder="—" value={low} onChange={e => setLow(e.target.value)} className="h-9 text-right" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Borne haute</Label>
+          <Input type="number" step="0.0001" placeholder="—" value={high} onChange={e => setHigh(e.target.value)} className="h-9 text-right" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Cible</Label>
+          <Input type="number" step="0.0001" placeholder="—" value={target} onChange={e => setTarget(e.target.value)} className="h-9 text-right text-sky-600 font-medium" />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEditMode ? "Modifier le plan" : "Plan long terme"}</DialogTitle>
         </DialogHeader>
@@ -141,18 +198,9 @@ export function LTPlanDialog({ open, onOpenChange, editPlan, onSaved }: LTPlanDi
             <Input value={name} onChange={e => { setName(e.target.value); nameTouchedRef.current = true; }} className="h-9" />
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs">Zone achat 1</Label>
-            <Input type="number" step="0.0001" placeholder="—" value={buyZone1} onChange={e => setBuyZone1(e.target.value)} className="h-9 text-right" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Zone achat 2</Label>
-            <Input type="number" step="0.0001" placeholder="—" value={buyZone2} onChange={e => setBuyZone2(e.target.value)} className="h-9 text-right" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Zone achat 3</Label>
-            <Input type="number" step="0.0001" placeholder="—" value={buyZone3} onChange={e => setBuyZone3(e.target.value)} className="h-9 text-right" />
-          </div>
+          {zoneInputs("Zone achat 1", z1Low, setZ1Low, z1High, setZ1High, z1Target, setZ1Target)}
+          {zoneInputs("Zone achat 2", z2Low, setZ2Low, z2High, setZ2High, z2Target, setZ2Target)}
+          {zoneInputs("Zone achat 3", z3Low, setZ3Low, z3High, setZ3High, z3Target, setZ3Target)}
         </div>
 
         <DialogFooter>

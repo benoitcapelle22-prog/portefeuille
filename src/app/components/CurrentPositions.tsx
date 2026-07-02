@@ -1,8 +1,18 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 
 export const SECTORS = [
-  "Finance", "Technology", "Santé", "Énergie", "Industrie",
-  "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre",
+  "Tech",
+  "Finances",
+  "Industrie",
+  "Consommation discrétionnaire",
+  "Santé",
+  "Services de communication",
+  "Consommation de base",
+  "Energie",
+  "Matériaux",
+  "Services aux collectivités",
+  "Immobilier",
+  "Autre",
 ];
 import { Card, CardContent } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";

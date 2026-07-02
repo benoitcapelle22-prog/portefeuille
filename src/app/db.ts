@@ -519,16 +519,23 @@ export async function deleteSwingPlan(id: string): Promise<void> {
 import { LTPlanEntry } from './components/LTPlanDialog';
 
 function mapLTPlan(row: any): LTPlanEntry {
+  const n = (v: any) => v != null ? Number(v) : null;
   return {
     id: row.id,
     date: row.date,
     code: row.code,
     name: row.name,
     sector: row.sector ?? null,
-    buyZone1: row.buy_zone_1 != null ? Number(row.buy_zone_1) : null,
-    buyZone2: row.buy_zone_2 != null ? Number(row.buy_zone_2) : null,
-    buyZone3: row.buy_zone_3 != null ? Number(row.buy_zone_3) : null,
-    closePrice: row.close_price != null ? Number(row.close_price) : null,
+    buyZone1Low: n(row.buy_zone_1_low),
+    buyZone1High: n(row.buy_zone_1_high),
+    buyZone1Target: n(row.buy_zone_1_target),
+    buyZone2Low: n(row.buy_zone_2_low),
+    buyZone2High: n(row.buy_zone_2_high),
+    buyZone2Target: n(row.buy_zone_2_target),
+    buyZone3Low: n(row.buy_zone_3_low),
+    buyZone3High: n(row.buy_zone_3_high),
+    buyZone3Target: n(row.buy_zone_3_target),
+    closePrice: n(row.close_price),
   };
 }
 
@@ -545,9 +552,15 @@ export async function addLTPlan(plan: LTPlanEntry): Promise<void> {
     code: plan.code,
     name: plan.name,
     sector: plan.sector ?? null,
-    buy_zone_1: plan.buyZone1 ?? null,
-    buy_zone_2: plan.buyZone2 ?? null,
-    buy_zone_3: plan.buyZone3 ?? null,
+    buy_zone_1_low: plan.buyZone1Low ?? null,
+    buy_zone_1_high: plan.buyZone1High ?? null,
+    buy_zone_1_target: plan.buyZone1Target ?? null,
+    buy_zone_2_low: plan.buyZone2Low ?? null,
+    buy_zone_2_high: plan.buyZone2High ?? null,
+    buy_zone_2_target: plan.buyZone2Target ?? null,
+    buy_zone_3_low: plan.buyZone3Low ?? null,
+    buy_zone_3_high: plan.buyZone3High ?? null,
+    buy_zone_3_target: plan.buyZone3Target ?? null,
     close_price: plan.closePrice ?? null,
   });
   if (error) throw error;
@@ -559,9 +572,15 @@ export async function updateLTPlan(plan: LTPlanEntry): Promise<void> {
     code: plan.code,
     name: plan.name,
     sector: plan.sector ?? null,
-    buy_zone_1: plan.buyZone1 ?? null,
-    buy_zone_2: plan.buyZone2 ?? null,
-    buy_zone_3: plan.buyZone3 ?? null,
+    buy_zone_1_low: plan.buyZone1Low ?? null,
+    buy_zone_1_high: plan.buyZone1High ?? null,
+    buy_zone_1_target: plan.buyZone1Target ?? null,
+    buy_zone_2_low: plan.buyZone2Low ?? null,
+    buy_zone_2_high: plan.buyZone2High ?? null,
+    buy_zone_2_target: plan.buyZone2Target ?? null,
+    buy_zone_3_low: plan.buyZone3Low ?? null,
+    buy_zone_3_high: plan.buyZone3High ?? null,
+    buy_zone_3_target: plan.buyZone3Target ?? null,
     close_price: plan.closePrice ?? null,
   }).eq('id', plan.id!);
   if (error) throw error;
