@@ -103,6 +103,7 @@ interface CurrentPositionsProps {
   onTotalPortfolioChange?: (total: number) => void;
   onNewTransaction?: () => void;
   quotesBySymbol?: Record<string, { price: number | null }>;
+  maxRiskPercent?: number;
 }
 
 function PriceInput({
@@ -157,6 +158,7 @@ export function CurrentPositions({
   onTotalPortfolioChange,
   onNewTransaction,
   quotesBySymbol: quotesBySymbolProp,
+  maxRiskPercent,
 }: CurrentPositionsProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -928,20 +930,31 @@ export function CurrentPositions({
                 )}
 
                 {/* RISQUE TOTAL (Trading) */}
-                {portfolioCategory === "Trading" && (
-                  <TableRow className={`font-bold ${totalRisk >= 0 ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"}`}>
-                    <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
-                    <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
-                    <TableCell className="text-right"></TableCell>{/* Cours actuel (vide) */}
-                    <TableCell className="text-right"></TableCell>{/* Valeur actuelle */}
-                    <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
-                    <TableCell className="text-right"></TableCell>{/* Stop Loss */}
-                    <TableCell className={`text-right text-sm ${totalRisk >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
-                      {formatCurrency(totalRisk, portfolioCurrency)}
-                    </TableCell>{/* Risque */}
-                    <TableCell></TableCell>{/* Actions */}
-                  </TableRow>
-                )}
+                {portfolioCategory === "Trading" && (() => {
+                  const effectiveRiskPct = maxRiskPercent ?? 1;
+                  const maxAllowedRisk = totalPortfolio * effectiveRiskPct / 100;
+                  const isOverLimit = totalRisk < 0 && Math.abs(totalRisk) > maxAllowedRisk;
+                  return (
+                    <TableRow className={`font-bold ${totalRisk >= 0 ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"}`}>
+                      <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
+                      <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
+                      <TableCell className="text-right"></TableCell>{/* Cours actuel */}
+                      <TableCell className="text-right"></TableCell>{/* Valeur actuelle */}
+                      <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
+                      <TableCell className="text-right text-xs">
+                        <div className="text-muted-foreground">Max autorisé</div>
+                        <div className={`font-semibold ${isOverLimit ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                          {effectiveRiskPct.toFixed(2)}% — {formatCurrency(maxAllowedRisk, portfolioCurrency)}
+                        </div>
+                      </TableCell>{/* Stop Loss → risque max autorisé */}
+                      <TableCell className={`text-right text-sm ${totalRisk >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+                        <div>{formatCurrency(totalRisk, portfolioCurrency)}</div>
+                        <div className="text-xs font-normal opacity-75">{totalRiskPercent.toFixed(2)}%</div>
+                      </TableCell>{/* Risque */}
+                      <TableCell></TableCell>{/* Actions */}
+                    </TableRow>
+                  );
+                })()}
               </tfoot>
             </Table>
           </div>

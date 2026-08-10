@@ -103,6 +103,7 @@ function mapPortfolio(row: any): Portfolio {
     fees: typeof row.fees === 'string' ? JSON.parse(row.fees) : (row.fees ?? { defaultFeesPercent: 0, defaultFeesMin: 0, defaultTFF: 0 }),
     cash: Number(row.cash ?? 0),
     position: row.position ?? 0,
+    maxRiskPercent: row.max_risk_percent != null ? Number(row.max_risk_percent) : undefined,
   };
 }
 
@@ -131,6 +132,7 @@ export async function createPortfolio(portfolio: Portfolio): Promise<void> {
     code: portfolio.code,
     fees: portfolio.fees,
     cash: portfolio.cash ?? 0,
+    max_risk_percent: portfolio.maxRiskPercent ?? null,
   });
   if (error) throw error;
 }
@@ -143,6 +145,7 @@ export async function updatePortfolio(id: string, updates: Partial<Portfolio>): 
   if (updates.code !== undefined) row.code = updates.code;
   if (updates.fees !== undefined) row.fees = updates.fees;
   if (updates.cash !== undefined) row.cash = updates.cash;
+  if (updates.maxRiskPercent !== undefined) row.max_risk_percent = updates.maxRiskPercent ?? null;
 
   const { error } = await supabase.from('portfolios').update(row).eq('id', id);
   if (error) throw error;

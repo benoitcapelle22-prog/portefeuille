@@ -89,6 +89,7 @@ export function TransactionsPage() {
           onUpdateCurrentPrice={handleUpdateCurrentPrice}
           portfolioId={currentPortfolioId || undefined}
           quotesBySymbol={quotesBySymbol}
+          maxRiskPercent={currentPortfolio?.maxRiskPercent}
           onNewTransaction={() => { setDialogInitialData({}); setDialogOpen(true); }}
         />
       )}

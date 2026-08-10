@@ -35,6 +35,7 @@ export interface Portfolio {
   fees: PortfolioFees;
   position?: number;
   cash?: number; // Liquidités disponibles
+  maxRiskPercent?: number; // % risque maximum autorisé (Trading uniquement)
 }
 
 interface PortfolioSelectorProps {
@@ -87,6 +88,7 @@ export function PortfolioSelector({
     defaultFeesPercent: "0",
     defaultFeesMin: "0",
     defaultTFF: "0",
+    maxRiskPercent: "1",
   });
 
   const currentPortfolio = portfolios?.find(p => p.id === currentPortfolioId);
@@ -100,6 +102,7 @@ export function PortfolioSelector({
       defaultFeesPercent: "0",
       defaultFeesMin: "0",
       defaultTFF: "0",
+      maxRiskPercent: "1",
     });
   };
 
@@ -113,6 +116,7 @@ export function PortfolioSelector({
         defaultFeesPercent: (currentPortfolio.fees.defaultFeesPercent ?? 0).toString(),
         defaultFeesMin: (currentPortfolio.fees.defaultFeesMin ?? 0).toString(),
         defaultTFF: (currentPortfolio.fees.defaultTFF ?? 0).toString(),
+        maxRiskPercent: (currentPortfolio.maxRiskPercent ?? 1).toString(),
       });
     }
   };
@@ -129,6 +133,7 @@ export function PortfolioSelector({
         defaultFeesPercent: (portfolio.fees.defaultFeesPercent ?? 0).toString(),
         defaultFeesMin: (portfolio.fees.defaultFeesMin ?? 0).toString(),
         defaultTFF: (portfolio.fees.defaultTFF ?? 0).toString(),
+        maxRiskPercent: (portfolio.maxRiskPercent ?? 1).toString(),
       });
       setIsListDialogOpen(false);
       setIsEditDialogOpen(true);
@@ -162,6 +167,7 @@ export function PortfolioSelector({
         defaultFeesMin: parseFloat(formData.defaultFeesMin) || 0,
         defaultTFF: parseFloat(formData.defaultTFF) || 0,
       },
+      maxRiskPercent: formData.category === "Trading" ? (parseFloat(formData.maxRiskPercent) || 1) : undefined,
     });
     resetForm();
     setIsCreateDialogOpen(false);
@@ -184,6 +190,7 @@ export function PortfolioSelector({
         defaultFeesMin: parseFloat(formData.defaultFeesMin) || 0,
         defaultTFF: parseFloat(formData.defaultTFF) || 0,
       },
+      maxRiskPercent: formData.category === "Trading" ? (parseFloat(formData.maxRiskPercent) || 1) : undefined,
     });
     setIsEditDialogOpen(false);
     setEditingPortfolioId(null);
@@ -352,6 +359,26 @@ export function PortfolioSelector({
                 )}
               </div>
             </div>
+
+            {formData.category === "Trading" && (
+              <div className="space-y-2">
+                <Label htmlFor="create-max-risk">% Risque maximum autorisé</Label>
+                <div className="relative">
+                  <Input
+                    id="create-max-risk"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    placeholder="1.00"
+                    value={formData.maxRiskPercent}
+                    onChange={(e) => setFormData({ ...formData, maxRiskPercent: e.target.value })}
+                    className="pr-8"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -572,6 +599,26 @@ export function PortfolioSelector({
                     )}
                   </div>
                 </div>
+
+                {formData.category === "Trading" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-max-risk">% Risque maximum autorisé</Label>
+                    <div className="relative">
+                      <Input
+                        id="edit-max-risk"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        placeholder="1.00"
+                        value={formData.maxRiskPercent}
+                        onChange={(e) => setFormData({ ...formData, maxRiskPercent: e.target.value })}
+                        className="pr-8"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+                    </div>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
