@@ -1437,6 +1437,111 @@ const recalcCashFromDB = async (portfolioId: string) => {
     }
   };
 
+  const [recalcPositionsLoading, setRecalcPositionsLoading] = useState(false);
+  const [recalcPositionsProgress, setRecalcPositionsProgress] = useState<string | null>(null);
+
+  const recalcAllPositions = async () => {
+    const portfolioIds = currentPortfolioId === "ALL"
+      ? portfolios.map(p => p.id)
+      : currentPortfolioId ? [currentPortfolioId] : [];
+
+    if (portfolioIds.length === 0) { alert("Aucun portefeuille sélectionné."); return; }
+
+    const label = portfolioIds.length > 1 ? `${portfolioIds.length} portefeuilles` : "1 portefeuille";
+    if (!confirm(`Recalculer les positions et liquidités depuis l'historique des transactions ?\n\n${label} — Les stop loss et cours manuels seront préservés.`)) return;
+
+    setRecalcPositionsLoading(true);
+    let totalOpen = 0, totalClosed = 0;
+
+    try {
+      for (let i = 0; i < portfolioIds.length; i++) {
+        const pid = portfolioIds[i];
+        const portName = portfolios.find(p => p.id === pid)?.name || pid;
+        setRecalcPositionsProgress(`${i + 1}/${portfolioIds.length} — ${portName}…`);
+
+        const [txs, existingPos] = await Promise.all([getTransactions(pid), getPositions(pid)]);
+
+        const savedMap = new Map<string, { stopLoss?: number; manualCurrentPrice?: number }>();
+        existingPos.forEach(p => {
+          savedMap.set((p.code || "").trim().toUpperCase(), { stopLoss: p.stopLoss, manualCurrentPrice: p.manualCurrentPrice });
+        });
+
+        const newPositions: DBPosition[] = [];
+        const newClosed: DBClosedPosition[] = [];
+
+        [...txs]
+          .filter(t => t.type === "achat" || t.type === "vente")
+          .sort((a, b) => {
+            const diff = parseDate(a.date) - parseDate(b.date);
+            if (diff !== 0) return diff;
+            return a.type === "achat" && b.type === "vente" ? -1 : a.type === "vente" && b.type === "achat" ? 1 : 0;
+          })
+          .forEach(t => {
+            const code = (t.code || "").trim().toUpperCase();
+            const convertedPrice = t.unitPrice * (t.conversionRate || 1);
+
+            if (t.type === "achat") {
+              const totalCost = t.quantity * convertedPrice + (t.fees || 0) + (t.tff || 0);
+              const ex = newPositions.find(p => (p.code || "").trim().toUpperCase() === code);
+              if (ex) {
+                const newTotal = ex.totalCost + totalCost;
+                const newQty = ex.quantity + t.quantity;
+                ex.totalCost = newTotal; ex.quantity = newQty; ex.pru = newTotal / newQty;
+              } else {
+                newPositions.push({ id: crypto.randomUUID(), portfolioId: pid, code: t.code, name: t.name, quantity: t.quantity, totalCost, pru: totalCost / t.quantity, currency: t.currency, sector: t.sector, ...savedMap.get(code) });
+              }
+            } else if (t.type === "vente") {
+              const ex = newPositions.find(p => (p.code || "").trim().toUpperCase() === code);
+              if (!ex || ex.quantity < t.quantity) { console.warn(`RecalcPositions: vente ignorée pour ${t.code}`); return; }
+              const totalSale = t.quantity * convertedPrice - (t.fees || 0) - (t.tff || 0);
+              const totalPurchase = t.quantity * ex.pru;
+              const gainLoss = totalSale - totalPurchase;
+              const purchaseTx = txs.filter(tx => tx.code === t.code && tx.type === "achat").sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+              const purchaseDate = new Date(purchaseTx?.date || t.date);
+              const saleDate = new Date(t.date);
+              const dividends = txs.filter(tx => tx.code === t.code && tx.type === "dividende" && new Date(tx.date) >= purchaseDate && new Date(tx.date) <= saleDate).reduce((s, tx) => s + (tx.unitPrice * tx.quantity * (tx.conversionRate || 1) - ((tx as any).tax || 0)), 0);
+              newClosed.push({ id: crypto.randomUUID(), portfolioId: pid, code: t.code, name: t.name, purchaseDate: purchaseTx?.date || t.date, saleDate: t.date, quantity: t.quantity, pru: ex.pru, averageSalePrice: totalSale / t.quantity, totalPurchase, totalSale, gainLoss, gainLossPercent: totalPurchase > 0 ? (gainLoss / totalPurchase) * 100 : 0, dividends, sector: ex.sector });
+              const newQty = ex.quantity - t.quantity;
+              if (newQty === 0) newPositions.splice(newPositions.indexOf(ex), 1);
+              else { ex.quantity = newQty; ex.totalCost -= totalPurchase; }
+            }
+          });
+
+        const newCash = txs.reduce((cash, t) => {
+          const c = t.unitPrice * (t.conversionRate || 1);
+          switch (t.type) {
+            case "depot":     return cash + t.unitPrice;
+            case "retrait":   return cash - t.unitPrice;
+            case "frais":     return cash - t.unitPrice;
+            case "interets":  return cash + t.unitPrice;
+            case "achat":     return cash - (t.quantity * c + (t.fees || 0) + (t.tff || 0));
+            case "vente":     return cash + (t.quantity * c - (t.fees || 0) - (t.tff || 0));
+            case "dividende": return cash + (t.quantity * c - ((t as any).tax || 0));
+            default:          return cash;
+          }
+        }, 0);
+
+        await deletePositionsByPortfolio(pid);
+        await deleteClosedPositionsByPortfolio(pid);
+        await bulkUpsertPositions(newPositions);
+        await bulkAddClosedPositions(newClosed);
+        await dbUpdatePortfolio(pid, { cash: newCash });
+
+        totalOpen += newPositions.length;
+        totalClosed += newClosed.length;
+      }
+
+      setRecalcPositionsProgress(`✅ Terminé — ${totalOpen} position(s) en cours, ${totalClosed} clôturée(s) recalculées.`);
+      await refreshData();
+      setTimeout(() => setRecalcPositionsProgress(null), 6000);
+    } catch (err: any) {
+      setRecalcPositionsProgress("❌ Erreur : " + (err?.message ?? String(err)));
+      setTimeout(() => setRecalcPositionsProgress(null), 6000);
+    } finally {
+      setRecalcPositionsLoading(false);
+    }
+  };
+
   const handleRecalcCash = async () => {
     if (!currentPortfolioId || currentPortfolioId === "ALL") {
       alert("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
@@ -1541,6 +1646,14 @@ const recalcCashFromDB = async (portfolioId: string) => {
                     {backfillLoading ? "Mise à jour taux EUR…" : "Backfill taux EUR historiques"}
                   </DropdownMenuItem>
                   <DropdownMenuItem
+                    onClick={recalcAllPositions}
+                    disabled={recalcPositionsLoading || portfolios.length === 0}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${recalcPositionsLoading ? "animate-spin" : ""}`} />
+                    {recalcPositionsLoading ? recalcPositionsProgress ?? "Recalcul…" : "Recalcul des positions"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     onClick={recalcPRU}
                     disabled={recalcPRULoading || !currentPortfolioId || currentPortfolioId === "ALL"}
                     className="gap-2"
@@ -1579,6 +1692,12 @@ const recalcCashFromDB = async (portfolioId: string) => {
             <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm text-muted-foreground">
               {recalcPRULoading && <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />}
               {recalcPRUProgress}
+            </div>
+          )}
+          {recalcPositionsProgress && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted text-sm text-muted-foreground">
+              {recalcPositionsLoading && <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />}
+              {recalcPositionsProgress}
             </div>
           )}
 
