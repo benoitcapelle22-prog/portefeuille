@@ -16,6 +16,7 @@ export function PositionSizeCalculator() {
   const [stopLoss, setStopLoss] = useState("6.76");
   const [riskPercent, setRiskPercent] = useState("0.50");
   const [baseRiskInput, setBaseRiskInput] = useState(() => localStorage.getItem("psc_baseRisk") ?? "0.50");
+  const [maxLinePercent, setMaxLinePercent] = useState(() => localStorage.getItem("psc_maxLine") ?? "5");
   const [riskProfile, setRiskProfile] = useState<"speculatif" | "prudent" | "normal" | "agressif">("normal");
   const [fetchLoading, setFetchLoading] = useState(false);
   const [swingDialogOpen, setSwingDialogOpen] = useState(false);
@@ -28,12 +29,12 @@ export function PositionSizeCalculator() {
   useEffect(() => {
     const localCap = localStorage.getItem("psc_capital") ?? "16000.00";
     const localRisk = localStorage.getItem("psc_baseRisk") ?? "0.50";
-    Promise.all([getSetting("calc_capital"), getSetting("calc_baseRisk")]).then(([cap, risk]) => {
+    const localMaxLine = localStorage.getItem("psc_maxLine") ?? "5";
+    Promise.all([getSetting("calc_capital"), getSetting("calc_baseRisk"), getSetting("calc_maxLine")]).then(([cap, risk, maxLine]) => {
       if (cap) {
         setCapital(cap);
         localStorage.setItem("psc_capital", cap);
       } else {
-        // Pas encore en base → écriture initiale depuis localStorage
         setSetting("calc_capital", localCap).catch(console.error);
       }
       if (risk) {
@@ -41,6 +42,12 @@ export function PositionSizeCalculator() {
         localStorage.setItem("psc_baseRisk", risk);
       } else {
         setSetting("calc_baseRisk", localRisk).catch(console.error);
+      }
+      if (maxLine) {
+        setMaxLinePercent(maxLine);
+        localStorage.setItem("psc_maxLine", maxLine);
+      } else {
+        setSetting("calc_maxLine", localMaxLine).catch(console.error);
       }
     }).catch(console.error);
   }, []);
@@ -53,6 +60,11 @@ export function PositionSizeCalculator() {
   const saveBaseRisk = (value: string) => {
     if (saveRiskRef.current) clearTimeout(saveRiskRef.current);
     saveRiskRef.current = setTimeout(() => { setSetting("calc_baseRisk", value).catch(console.error); }, 1000);
+  };
+
+  const saveMaxLine = (value: string) => {
+    localStorage.setItem("psc_maxLine", value);
+    setSetting("calc_maxLine", value).catch(console.error);
   };
 
   useEffect(() => {
@@ -104,6 +116,14 @@ export function PositionSizeCalculator() {
         lowerBound: 0,
         baseRisk: 0.25,
         finalRisk: 0.50,
+        maxLineAmount: 0,
+        effectiveShares: 0,
+        effectiveInvested: 0,
+        effectivePct: 0,
+        effectiveHalf: 0,
+        effectiveHalfPct: 0,
+        effectiveHalfRisk: 0,
+        isLineSizeConstrained: false,
       };
     }
 
@@ -150,6 +170,18 @@ export function PositionSizeCalculator() {
     };
     const baseRisk = riskProfiles[riskProfile];
 
+    const maxLineAmount = cap * (parseFloat(maxLinePercent) || 0) / 100;
+
+    // Actions à acheter = contrainte par taille de ligne max
+    const sharesFromLineSize = maxLineAmount > 0 && buy > 0 ? Math.floor(maxLineAmount / buy) : maxShares;
+    const effectiveShares = Math.min(maxShares, sharesFromLineSize);
+    const effectiveInvested = effectiveShares * buy;
+    const effectivePct = cap > 0 ? (effectiveInvested / cap) * 100 : 0;
+    const effectiveHalf = Math.floor(effectiveShares / 2);
+    const effectiveHalfPct = cap > 0 ? (effectiveHalf * buy / cap) * 100 : 0;
+    const effectiveHalfRisk = effectiveHalf * riskPerAction;
+    const isLineSizeConstrained = effectiveShares < maxShares;
+
     return {
       riskAmount,
       stopPercent,
@@ -165,6 +197,14 @@ export function PositionSizeCalculator() {
       lowerBound,
       baseRisk,
       finalRisk,
+      maxLineAmount,
+      effectiveShares,
+      effectiveInvested,
+      effectivePct,
+      effectiveHalf,
+      effectiveHalfPct,
+      effectiveHalfRisk,
+      isLineSizeConstrained,
     };
   };
 
@@ -189,26 +229,12 @@ export function PositionSizeCalculator() {
           <div className="flex items-center gap-3">
             <Calculator className="h-6 w-6 text-primary" />
             <CardTitle className="text-lg font-bold uppercase tracking-wide">
-              Calculette Money Management
+              Calculette
             </CardTitle>
           </div>
         </CardHeader>
         <CardContent className="p-6">
           <div className="grid gap-4">
-            {/* Risque du trade */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Risque du trade</Label>
-              <div className="flex gap-2">
-                <div className="h-12 flex items-center justify-end font-bold text-lg text-cyan-600 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-900 rounded-md border-2 border-cyan-300 dark:border-cyan-700 px-3 flex-1">
-                  {formatPercent(result.finalRisk)}
-                </div>
-                <div className="flex flex-col items-end justify-center bg-cyan-200 dark:bg-cyan-800 rounded-md px-4 font-bold">
-                  <div className="text-xs text-gray-600 dark:text-gray-300 font-normal">Risque en montant</div>
-                  <div className="text-base">{formatCurrency(result.riskAmount)}</div>
-                </div>
-              </div>
-            </div>
-
             {/* Code action + Nom */}
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
               <div className="space-y-2">
@@ -281,6 +307,42 @@ export function PositionSizeCalculator() {
               </div>
             </div>
 
+            {/* Actions à acheter */}
+            <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg border-2 ${
+              result.isLineSizeConstrained
+                ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
+                : "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800"
+            }`}>
+              <div className="text-center">
+                <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                  Actions à acheter
+                  {result.isLineSizeConstrained && (
+                    <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded-full font-medium">ligne max</span>
+                  )}
+                </div>
+                <div className={`text-3xl font-bold ${
+                  result.isLineSizeConstrained ? "text-amber-600 dark:text-amber-400" : "text-teal-600 dark:text-teal-400"
+                }`}>{result.effectiveShares}</div>
+                <div className="text-xs text-muted-foreground mt-1">{formatCurrency(result.riskPerAction)} par action</div>
+              </div>
+              <div className={`text-center border-l-2 border-r-2 ${
+                result.isLineSizeConstrained ? "border-amber-200 dark:border-amber-800" : "border-teal-200 dark:border-teal-800"
+              }`}>
+                <div className="text-sm text-muted-foreground mb-1">Montant investi</div>
+                <div className={`text-2xl font-bold ${
+                  result.isLineSizeConstrained ? "text-amber-700 dark:text-amber-300" : "text-teal-700 dark:text-teal-300"
+                }`}>{formatCurrency(result.effectiveInvested, 0)}</div>
+                <div className="text-xs text-muted-foreground mt-1">{formatPercent(result.effectivePct)} du PTF</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-muted-foreground mb-1">½ position</div>
+                <div className={`text-3xl font-bold ${
+                  result.isLineSizeConstrained ? "text-amber-600 dark:text-amber-400" : "text-teal-600 dark:text-teal-400"
+                }`}>{result.effectiveHalf}</div>
+                <div className="text-xs text-muted-foreground mt-1">{formatPercent(result.effectiveHalfPct)} • {formatCurrency(result.effectiveHalfRisk)}</div>
+              </div>
+            </div>
+
             {/* Plage déclenchement APD */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border-2 border-yellow-200 dark:border-yellow-800">
               <div>
@@ -333,6 +395,31 @@ export function PositionSizeCalculator() {
                 onChange={(e) => { setCapital(e.target.value); localStorage.setItem("psc_capital", e.target.value); saveCapital(e.target.value); }}
                 className="h-12 text-right font-bold text-lg bg-cyan-100 dark:bg-cyan-900 border-2 border-cyan-300 dark:border-cyan-700"
               />
+            </div>
+
+            {/* % max ligne */}
+            <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-950/50 dark:to-purple-950/50 rounded-lg border-2 border-violet-200 dark:border-violet-800">
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">% maximum de ligne</div>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="100"
+                    value={maxLinePercent}
+                    onChange={e => { setMaxLinePercent(e.target.value); saveMaxLine(e.target.value); }}
+                    className="h-12 text-right font-bold text-lg bg-violet-100 dark:bg-violet-900 border-2 border-violet-300 dark:border-violet-700 pr-10"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-lg text-violet-600 dark:text-violet-400">%</span>
+                </div>
+              </div>
+              <div className="border-l-2 border-violet-200 dark:border-violet-800 pl-4">
+                <div className="text-xs text-muted-foreground mb-1">Taille de ligne maximum</div>
+                <div className="h-12 flex items-center justify-end font-bold text-lg text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/50 rounded-md border-2 border-violet-300 dark:border-violet-700 px-3">
+                  {formatCurrency(result.maxLineAmount, 0)}
+                </div>
+              </div>
             </div>
 
             {/* Profil de risque */}
@@ -390,8 +477,8 @@ export function PositionSizeCalculator() {
               </div>
             </div>
 
-            {/* Risque de base et Risque final */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50 rounded-lg border-2 border-emerald-200 dark:border-emerald-800">
+            {/* Risque de base, Risque final et Risque en montant */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50 rounded-lg border-2 border-emerald-200 dark:border-emerald-800">
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Risque de base</div>
                 <div className="relative">
@@ -411,6 +498,12 @@ export function PositionSizeCalculator() {
                   {formatPercent(result.finalRisk)}
                 </div>
               </div>
+              <div className="border-l-2 border-emerald-200 dark:border-emerald-800 pl-4">
+                <div className="text-xs text-muted-foreground mb-1">Risque en montant</div>
+                <div className="h-12 flex items-center justify-end font-bold text-lg text-cyan-600 dark:text-cyan-400 bg-cyan-200 dark:bg-cyan-800 rounded-md border-2 border-cyan-300 dark:border-cyan-700 px-3">
+                  {formatCurrency(result.riskAmount)}
+                </div>
+              </div>
             </div>
 
             {/* Message conseil */}
@@ -428,7 +521,7 @@ export function PositionSizeCalculator() {
         initialValues={{
           code,
           name,
-          quantity: result.maxShares,
+          quantity: result.effectiveShares,
           limitPrice: parseFloat(buyPrice) || 0,
           stopPrice: parseFloat(stopLoss) || 0,
           riskAmount: result.riskAmount,

@@ -1488,7 +1488,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
             <div className="flex flex-wrap gap-1 sm:gap-2">
               <Link to="/"><Button variant={location.pathname === "/" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden xs:inline">Tableau de bord</span><span className="xs:hidden">Bord</span></Button></Link>
               <Link to="/transactions"><Button variant={location.pathname === "/transactions" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Receipt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />Transactions</Button></Link>
-              <Link to="/calculator"><Button variant={location.pathname === "/calculator" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Calculatrice</span><span className="sm:hidden">Calc.</span></Button></Link>
+              <Link to="/calculator"><Button variant={location.pathname === "/calculator" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Money Management</span><span className="sm:hidden">MM</span></Button></Link>
               <Link to="/trade-plan"><Button variant={location.pathname === "/trade-plan" ? "default" : "ghost"} size="sm" className="gap-1 sm:gap-2 text-xs sm:text-sm"><ClipboardList className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Plans de trade</span><span className="sm:hidden">Plans</span></Button></Link>
             </div>
 
