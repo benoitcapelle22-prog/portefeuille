@@ -7,6 +7,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
   BarChart, Bar
 } from "recharts";
+import { getPricesForDate, fetchAndSavePricesForDate } from "../../services/pricesHistory";
 import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus, Info } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { Input } from "./ui/input";
@@ -41,6 +42,19 @@ function getMonth(dateStr: string): number {
     return parseInt(dateStr.split("/")[1]) - 1;
   }
   return new Date(dateStr).getMonth();
+}
+
+function normalizeDate(dateStr: string): string {
+  if (!dateStr) return "";
+  // DD/MM/YYYY → YYYY-MM-DD
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    return `${dateStr.slice(6)}-${dateStr.slice(3, 5)}-${dateStr.slice(0, 2)}`;
+  }
+  // YYYY/MM/DD → YYYY-MM-DD
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(dateStr)) {
+    return dateStr.replace(/\//g, "-");
+  }
+  return dateStr.substring(0, 10);
 }
 
 function deltaColor(val: number, higherIsBetter = true) {
@@ -114,6 +128,7 @@ export function Dashboard({
   const [yearFilter, setYearFilter] = useState("all");
   const [portfolioChart, setPortfolioChart] = useState<{ month: string; valuation: number; invested: number }[]>([]);
   const [historicalMarketValue, setHistoricalMarketValue] = useState<number | null>(null);
+  const [historicalPrices, setHistoricalPrices] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const symbols = Array.from(
@@ -281,6 +296,16 @@ export function Dashboard({
     return years.length > 0 ? years : [currentYear];
   }, [closedPositions]);
 
+  const symbolConvRates = useMemo(() => {
+    const rates: Record<string, number> = {};
+    for (const t of transactions) {
+      if (t.type === "achat" || t.type === "vente") {
+        rates[t.code.trim().toUpperCase()] = t.conversionRate || 1;
+      }
+    }
+    return rates;
+  }, [transactions]);
+
   // ── Calculs valorisation ──────────────────────────────────────────────────
   const totalInvested  = positions.reduce((sum, p) => sum + p.totalCost, 0);
   const totalValue     = positions.reduce((sum, p) => sum + (p.totalValue || p.totalCost), 0);
@@ -298,28 +323,36 @@ export function Dashboard({
     const posMap = new Map<string, { totalCost: number; quantity: number }>();
     let historicalCash = 0;
 
+    const typeRank = (type: string) => type === "achat" ? 0 : type === "vente" ? 2 : 1;
+
     const sorted = [...transactions]
-      .filter(t => t.date.substring(0, 10) <= cutoff)
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .filter(t => normalizeDate(t.date) <= cutoff)
+      .sort((a, b) => {
+        const dateCmp = normalizeDate(a.date).localeCompare(normalizeDate(b.date));
+        if (dateCmp !== 0) return dateCmp;
+        // Même date : rang numérique strict achat(0) < autres(1) < vente(2)
+        return typeRank(a.type) - typeRank(b.type);
+      });
 
     for (const t of sorted) {
       const conv = t.conversionRate || 1;
+      const code = (t.code || "").trim().toUpperCase();
       switch (t.type) {
         case "achat": {
           const cost = t.quantity * t.unitPrice * conv + (t.fees || 0) + (t.tff || 0);
-          const ex = posMap.get(t.code);
+          const ex = posMap.get(code);
           if (ex) { ex.totalCost += cost; ex.quantity += t.quantity; }
-          else posMap.set(t.code, { totalCost: cost, quantity: t.quantity });
+          else posMap.set(code, { totalCost: cost, quantity: t.quantity });
           historicalCash -= cost;
           break;
         }
         case "vente": {
-          const ex = posMap.get(t.code);
+          const ex = posMap.get(code);
           if (ex && ex.quantity > 0) {
             const pru = ex.totalCost / ex.quantity;
             ex.quantity -= t.quantity;
             ex.totalCost -= pru * t.quantity;
-            if (ex.quantity <= 0) posMap.delete(t.code);
+            if (ex.quantity <= 0) posMap.delete(code);
           }
           historicalCash += t.quantity * t.unitPrice * conv - (t.fees || 0);
           break;
@@ -335,16 +368,16 @@ export function Dashboard({
     const totalCost = Array.from(posMap.values()).reduce((s, p) => s + Math.max(0, p.totalCost), 0);
     const hPositions = Array.from(posMap.entries())
       .filter(([, p]) => p.quantity > 0)
-      .map(([code, p]) => ({ code, quantity: p.quantity }));
+      .map(([code, p]) => ({ code, quantity: p.quantity, totalCost: Math.max(0, p.totalCost) }));
+
     return { totalCost, cash: historicalCash, positions: hPositions, cutoff };
   }, [transactions, yearFilter, endDate]);
 
   useEffect(() => {
-    if (!historicalPortfolio) { setHistoricalMarketValue(null); return; }
+    if (!historicalPortfolio) { setHistoricalMarketValue(null); setHistoricalPrices({}); return; }
     const { positions: hPositions, cutoff } = historicalPortfolio;
-    if (hPositions.length === 0) { setHistoricalMarketValue(null); return; }
+    if (hPositions.length === 0) { setHistoricalMarketValue(null); setHistoricalPrices({}); return; }
 
-    // Dernier taux de conversion EUR connu par symbole
     const convRates: Record<string, number> = {};
     for (const t of transactions) {
       if (t.type === "achat" || t.type === "vente") {
@@ -353,48 +386,24 @@ export function Dashboard({
     }
 
     let cancelled = false;
-    const fromDate = new Date(cutoff);
-    fromDate.setDate(fromDate.getDate() - 7);
-    const fromStr = fromDate.toISOString().split("T")[0];
+    const syms = hPositions.map(p => p.code.trim().toUpperCase());
 
     (async () => {
       try {
-        const yearEndPrices: Record<string, number> = {};
-        const syms = hPositions.map(p => p.code.trim().toUpperCase());
-        const BATCH = 5;
+        // 1. Lire d'abord les cours déjà en base pour cette date
+        const dbPrices = await getPricesForDate(syms, cutoff);
+        const missingSyms = syms.filter(s => dbPrices[s] === undefined);
 
-        for (let i = 0; i < syms.length; i += BATCH) {
-          if (cancelled) return;
-          await Promise.all(syms.slice(i, i + BATCH).map(async (symbol) => {
-            try {
-              const p1 = Math.floor(new Date(fromStr).getTime() / 1000);
-              const p2 = Math.floor(new Date(cutoff).getTime() / 1000) + 86400;
-              const url = import.meta.env.DEV
-                ? `/yahoo-proxy/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}`
-                : `/api/history?symbol=${encodeURIComponent(symbol)}&from=${fromStr}&to=${cutoff}`;
-              const res = await fetch(url);
-              if (!res.ok) return;
-              const data = await res.json();
-
-              let prices: { date: string; close: number }[] = [];
-              if (import.meta.env.DEV) {
-                const result = data?.chart?.result?.[0];
-                if (!result) return;
-                const ts: number[] = result.timestamp ?? [];
-                const cl: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
-                prices = ts.map((t, i) => ({ date: new Date(t * 1000).toISOString().split("T")[0], close: cl[i] as number }))
-                  .filter(p => p.close !== null && p.close !== undefined && Number.isFinite(p.close));
-              } else {
-                prices = data.prices ?? [];
-              }
-
-              const valid = prices.filter(p => p.date <= cutoff);
-              if (valid.length > 0) yearEndPrices[symbol] = valid[valid.length - 1].close;
-            } catch { /* ignore */ }
-          }));
+        // 2. Pour les symboles manquants, fetcher Yahoo et stocker en base
+        let fetchedPrices: Record<string, number> = {};
+        if (missingSyms.length > 0 && !cancelled) {
+          const { pricesBySymbol } = await fetchAndSavePricesForDate(missingSyms, cutoff);
+          fetchedPrices = pricesBySymbol;
         }
 
         if (cancelled) return;
+
+        const yearEndPrices = { ...dbPrices, ...fetchedPrices };
 
         let marketValue = 0;
         for (const { code, quantity } of hPositions) {
@@ -403,10 +412,13 @@ export function Dashboard({
           if (price !== undefined) marketValue += quantity * price * (convRates[sym] || 1);
         }
 
-        if (!cancelled) setHistoricalMarketValue(marketValue > 0 ? marketValue : null);
+        if (!cancelled) {
+          setHistoricalPrices(yearEndPrices);
+          setHistoricalMarketValue(marketValue > 0 ? marketValue : null);
+        }
       } catch (e) {
         console.warn("[historicalMarketValue] error:", e);
-        if (!cancelled) setHistoricalMarketValue(null);
+        if (!cancelled) { setHistoricalPrices({}); setHistoricalMarketValue(null); }
       }
     })();
 
@@ -417,12 +429,22 @@ export function Dashboard({
   const displayCash           = isHistorical ? historicalPortfolio.cash : cash;
   const displayTotalValue     = isHistorical ? (historicalMarketValue ?? historicalPortfolio.totalCost) : totalValue;
   const displayTotalPortfolio = isHistorical ? (historicalMarketValue ?? historicalPortfolio.totalCost) + historicalPortfolio.cash : totalPortfolio;
+
+  // Plus-value latente : au 31/12 de l'année sélectionnée si filtre historique, sinon aujourd'hui
+  const displayUnrealizedGL = isHistorical
+    ? displayTotalValue - historicalPortfolio.totalCost
+    : unrealizedGainLoss;
+  const displayInvestedBase = isHistorical ? historicalPortfolio.totalCost : totalInvested;
+  const displayUnrealizedGLPct = displayInvestedBase > 0
+    ? (displayUnrealizedGL / displayInvestedBase) * 100
+    : 0;
+
   const realizedGainLoss          = filteredClosedPositions.reduce((sum, p) => sum + (p.gainLoss || 0), 0);
   const totalDividends            = filteredTransactions
     .filter(t => t.type === "dividende")
     .reduce((sum, t) => sum + t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0) * t.conversionRate, 0);
-  const totalGainLoss        = unrealizedGainLoss + realizedGainLoss + totalDividends;
-  const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+  const totalGainLoss        = displayUnrealizedGL + realizedGainLoss + totalDividends;
+  const totalGainLossPercent = displayInvestedBase > 0 ? (totalGainLoss / displayInvestedBase) * 100 : 0;
 
   // ── Calculs performance ───────────────────────────────────────────────────
   const performanceByStock = positions
@@ -445,22 +467,60 @@ export function Dashboard({
       return new Date(`${mA} 1, ${yA}`).getTime() - new Date(`${mB} 1, ${yB}`).getTime();
     });
 
-  const portfolioDistribution = positions
-    .filter(p => (p.totalValue || p.totalCost) > 0)
-    .map(p => ({ name: p.code, value: p.totalValue || p.totalCost, percent: totalValue > 0 ? ((p.totalValue || p.totalCost) / totalValue) * 100 : 0 }))
-    .sort((a, b) => b.value - a.value);
+  const portfolioDistribution = (() => {
+    if (isHistorical && historicalPortfolio) {
+      const withValues = historicalPortfolio.positions
+        .map(p => {
+          const sym = p.code.trim().toUpperCase();
+          const price = historicalPrices[sym];
+          const value = price !== undefined
+            ? p.quantity * price * (symbolConvRates[sym] || 1)
+            : p.totalCost;
+          return { name: p.code, value: Math.max(0, value) };
+        })
+        .filter(p => p.value > 0);
+      const total = withValues.reduce((s, p) => s + p.value, 0);
+      return withValues
+        .map(p => ({ ...p, percent: total > 0 ? (p.value / total) * 100 : 0 }))
+        .sort((a, b) => b.value - a.value);
+    }
+    return positions
+      .filter(p => (p.totalValue || p.totalCost) > 0)
+      .map(p => ({ name: p.code, value: p.totalValue || p.totalCost, percent: totalValue > 0 ? ((p.totalValue || p.totalCost) / totalValue) * 100 : 0 }))
+      .sort((a, b) => b.value - a.value);
+  })();
 
-  const sectorDistribution = positions
-    .filter(p => (p.totalValue || p.totalCost) > 0)
-    .reduce((acc, p) => {
-      const sector = p.sector || "Non défini";
-      const val = p.totalValue || p.totalCost;
-      const ex = acc.find(i => i.sector === sector);
-      if (ex) ex.value += val; else acc.push({ sector, value: val });
-      return acc;
-    }, [] as { sector: string; value: number }[])
-    .map(i => ({ name: i.sector, value: i.value, percent: totalValue > 0 ? (i.value / totalValue) * 100 : 0 }))
-    .sort((a, b) => b.value - a.value);
+  const sectorDistribution = (() => {
+    if (isHistorical && historicalPortfolio) {
+      const sectorByCode = new Map(positions.map(p => [p.code.trim().toUpperCase(), p.sector]));
+      const sectorMap: Record<string, number> = {};
+      for (const p of historicalPortfolio.positions) {
+        const sym = p.code.trim().toUpperCase();
+        const price = historicalPrices[sym];
+        const value = price !== undefined
+          ? p.quantity * price * (symbolConvRates[sym] || 1)
+          : p.totalCost;
+        if (value <= 0) continue;
+        const sector = sectorByCode.get(sym) || "Non défini";
+        sectorMap[sector] = (sectorMap[sector] || 0) + value;
+      }
+      const total = Object.values(sectorMap).reduce((s, v) => s + v, 0);
+      return Object.entries(sectorMap)
+        .map(([name, value]) => ({ name, value, percent: total > 0 ? (value / total) * 100 : 0 }))
+        .sort((a, b) => b.value - a.value);
+    }
+    return positions
+      .filter(p => (p.totalValue || p.totalCost) > 0)
+      .reduce((acc, p) => {
+        const sector = p.sector || "Non défini";
+        const val = p.totalValue || p.totalCost;
+        const ex = acc.find(i => i.sector === sector);
+        if (ex) ex.value += val; else acc.push({ sector, value: val });
+        return acc;
+      }, [] as { sector: string; value: number }[])
+      .map(i => ({ name: i.sector, value: i.value, percent: totalValue > 0 ? (i.value / totalValue) * 100 : 0 }))
+      .sort((a, b) => b.value - a.value);
+  })();
 
   // ── Calculs stat trading N / N-1 ─────────────────────────────────────────
   const N   = selectedYear;
@@ -613,13 +673,15 @@ export function Dashboard({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
-                  Gain/Perte latent{isHistorical ? " (actuel)" : ""}
+                  {isHistorical
+                    ? `Latent au 31/12/${yearFilter}`
+                    : "Gain/Perte latent"}
                 </CardTitle>
-                {unrealizedGainLoss >= 0 ? <TrendingUp className="h-4 w-4 text-green-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
+                {displayUnrealizedGL >= 0 ? <TrendingUp className="h-4 w-4 text-green-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold ${unrealizedGainLoss >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(unrealizedGainLoss)}</div>
-                <p className="text-xs text-muted-foreground">{unrealizedGainLossPercent >= 0 ? "+" : ""}{unrealizedGainLossPercent.toFixed(2)}%</p>
+                <div className={`text-2xl font-bold ${displayUnrealizedGL >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(displayUnrealizedGL)}</div>
+                <p className="text-xs text-muted-foreground">{displayUnrealizedGLPct >= 0 ? "+" : ""}{displayUnrealizedGLPct.toFixed(2)}%</p>
               </CardContent>
             </Card>
             <Card>
@@ -643,6 +705,7 @@ export function Dashboard({
               </CardContent>
             </Card>
           </div>
+
 
           <div className="grid gap-4 md:grid-cols-2">
             <Card>

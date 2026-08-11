@@ -75,7 +75,7 @@ export function TransactionsPage() {
         ))}
       </div>
 
-      {activeTab === "positions" && (
+      <div className={activeTab !== "positions" ? "hidden" : ""}>
         <CurrentPositions
           positions={currentData.positions}
           portfolioCurrency={displayCurrency}
@@ -92,7 +92,7 @@ export function TransactionsPage() {
           maxRiskPercent={currentPortfolio?.maxRiskPercent}
           onNewTransaction={() => { setDialogInitialData({}); setDialogOpen(true); }}
         />
-      )}
+      </div>
 
       {activeTab === "cloturees" && (
         <ClosedPositions

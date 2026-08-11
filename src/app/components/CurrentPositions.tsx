@@ -186,9 +186,30 @@ export function CurrentPositions({
 
   const { quotesBySymbol: quotesFromHook } = useQuotes(quotesBySymbolProp ? [] : symbols);
   const quotesBySymbol = quotesBySymbolProp ?? quotesFromHook;
+
+  // Symboles à interroger : positions actuelles + positions ouvertes à endDate (positions clôturées depuis)
+  const historicalSymbols = useMemo(() => {
+    if (!endDate || !transactions || transactions.length === 0) return symbols;
+    const cutoff = new Date(endDate);
+    cutoff.setHours(23, 59, 59, 999);
+    const qtyMap: Record<string, number> = {};
+    const sorted = [...transactions]
+      .filter(t => (t.type === "achat" || t.type === "vente") && new Date(t.date) <= cutoff)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    for (const tx of sorted) {
+      const code = (tx.code || "").trim().toUpperCase();
+      qtyMap[code] = (qtyMap[code] || 0) + (tx.type === "achat" ? tx.quantity : -tx.quantity);
+    }
+    const historicalCodes = Object.keys(qtyMap).filter(c => qtyMap[c] > 0);
+    return Array.from(new Set([...symbols, ...historicalCodes]));
+  }, [endDate, transactions, symbols]);
+
+  // N'interroger la DB que pour une date complète (année ≥ 1000) pour éviter les requêtes parasites pendant la frappe
+  const validDate = endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) && parseInt(endDate.slice(0, 4)) >= 1000 ? endDate : null;
+
   const { prices: historicalPrices, loading: historicalLoading } = useHistoricalPrices(
-    symbols,
-    endDate || null
+    historicalSymbols,
+    validDate
   );
 
   const handleFetchHistoricalForDate = async () => {
@@ -278,9 +299,10 @@ export function CurrentPositions({
   // Si une date est sélectionnée, on rejoue toutes les transactions achat/vente
   // jusqu'à cette date pour recalculer quantité, totalCost et PRU.
   const recomputedPositions: Position[] = useMemo(() => {
-    if (!endDate || !transactions || transactions.length === 0) {
+    if (!validDate || !transactions || transactions.length === 0) {
       return positionsWithPrices;
     }
+    const endDate = validDate;
 
     const cutoff = new Date(endDate);
     cutoff.setHours(23, 59, 59, 999);
@@ -350,8 +372,8 @@ export function CurrentPositions({
 
   // Recalcul des liquidités à la date du filtre (replay de toutes les transactions)
   const historicalCash = useMemo(() => {
-    if (!endDate || !transactions || transactions.length === 0) return null;
-    const cutoff = new Date(endDate);
+    if (!validDate || !transactions || transactions.length === 0) return null;
+    const cutoff = new Date(validDate);
     cutoff.setHours(23, 59, 59, 999);
     let c = 0;
     const sorted = [...transactions]
