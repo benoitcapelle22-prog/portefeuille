@@ -1577,7 +1577,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
           <div className="flex items-center gap-3">
             <TrendingUp className="size-6 sm:size-8 text-primary shrink-0" />
             <h1 className="text-lg sm:text-2xl md:text-3xl leading-tight">Suivi de Portefeuille Boursier</h1>
-            <span className="text-xs text-muted-foreground/50 self-end pb-0.5">v4.15</span>
+            <span className="text-xs text-muted-foreground/50 self-end pb-0.5">v4.17</span>
           </div>
 
           <PortfolioSelector
