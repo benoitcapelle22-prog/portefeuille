@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { toast } from "sonner";
+import { confirmDialog } from "./ConfirmDialogHost";
 import {
   Select,
   SelectContent,
@@ -140,20 +142,24 @@ export function PortfolioSelector({
     }
   };
 
-  const handleDeletePortfolioFromList = (portfolioId: string) => {
+  const handleDeletePortfolioFromList = async (portfolioId: string) => {
     if (portfolios.length <= 1) {
-      alert("Vous devez conserver au moins un portefeuille");
+      toast.error("Vous devez conserver au moins un portefeuille");
       return;
     }
 
-    if (confirm("Êtes-vous sûr de vouloir supprimer ce portefeuille et toutes ses données ?")) {
+    if (await confirmDialog({
+      description: "Êtes-vous sûr de vouloir supprimer ce portefeuille et toutes ses données ?",
+      confirmLabel: "Supprimer",
+      variant: "destructive",
+    })) {
       onDeletePortfolio(portfolioId);
     }
   };
 
   const handleCreatePortfolio = () => {
     if (!formData.name.trim()) {
-      alert("Veuillez saisir un nom pour le portefeuille");
+      toast.error("Veuillez saisir un nom pour le portefeuille");
       return;
     }
 
@@ -176,7 +182,7 @@ export function PortfolioSelector({
   const handleUpdatePortfolio = () => {
     const portfolioIdToUpdate = editingPortfolioId || currentPortfolioId;
     if (!portfolioIdToUpdate || !formData.name.trim()) {
-      alert("Veuillez saisir un nom pour le portefeuille");
+      toast.error("Veuillez saisir un nom pour le portefeuille");
       return;
     }
 
@@ -196,15 +202,19 @@ export function PortfolioSelector({
     setEditingPortfolioId(null);
   };
 
-  const handleDeletePortfolio = () => {
+  const handleDeletePortfolio = async () => {
     if (portfolios.length <= 1) {
-      alert("Vous devez conserver au moins un portefeuille");
+      toast.error("Vous devez conserver au moins un portefeuille");
       return;
     }
 
     if (!currentPortfolioId) return;
 
-    if (confirm("Êtes-vous sûr de vouloir supprimer ce portefeuille et toutes ses données ?")) {
+    if (await confirmDialog({
+      description: "Êtes-vous sûr de vouloir supprimer ce portefeuille et toutes ses données ?",
+      confirmLabel: "Supprimer",
+      variant: "destructive",
+    })) {
       onDeletePortfolio(currentPortfolioId);
     }
   };

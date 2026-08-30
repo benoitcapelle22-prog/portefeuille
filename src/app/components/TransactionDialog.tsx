@@ -8,6 +8,7 @@ import { Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
 import { Loader2 } from "lucide-react";
 import { useExchangeRates } from "../hooks/useExchangeRates";
+import { toast } from "sonner";
 
 const SECTORS = [
   "Finance", "Technology", "Santé", "Énergie", "Industrie",
@@ -277,7 +278,7 @@ export function TransactionDialog({
   // ── Soumission ───────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code || !name || !quantity || !unitPrice) { alert("Veuillez remplir tous les champs obligatoires"); return; }
+    if (!code || !name || !quantity || !unitPrice) { toast.error("Veuillez remplir tous les champs obligatoires"); return; }
     // PortfolioLayout utilise unitPrice * conversionRate → on stocke l'inverse (1 devise = ? EUR)
     const storedConvRate = isForeignCurrency && convRate > 0 ? 1 / convRate : 1;
     const tffFinal = showTFF ? (parseFloat(tff) || 0) : 0;

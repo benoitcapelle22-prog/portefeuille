@@ -4,6 +4,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Wallet, Plus, Minus, Receipt, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
+import { formatCurrency as formatCurrencyUtil } from "../utils/format";
 import {
   Dialog,
   DialogContent,
@@ -33,22 +35,17 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
   const [type, setType] = useState<"deposit" | "withdrawal" | "fees" | "interests">("deposit");
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: currency
-    }).format(value);
-  };
+  const formatCurrency = (value: number) => formatCurrencyUtil(value, currency);
 
   const handleSubmit = () => {
     const amountValue = parseFloat(amount);
     if (isNaN(amountValue) || amountValue <= 0) {
-      alert("Veuillez saisir un montant valide");
+      toast.error("Veuillez saisir un montant valide");
       return;
     }
 
     if ((type === "withdrawal" || type === "fees") && amountValue > cash) {
-      alert("Montant insuffisant dans les liquidités");
+      toast.error("Montant insuffisant dans les liquidités");
       return;
     }
 
@@ -99,7 +96,7 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
                     <SelectContent>
                       <SelectItem value="deposit">
                         <div className="flex items-center gap-2">
-                          <Plus className="h-4 w-4 text-green-600" />
+                          <Plus className="h-4 w-4 text-positive" />
                           Dépôt
                         </div>
                       </SelectItem>
@@ -111,7 +108,7 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
                       </SelectItem>
                       <SelectItem value="fees">
                         <div className="flex items-center gap-2">
-                          <Receipt className="h-4 w-4 text-red-700" />
+                          <Receipt className="h-4 w-4 text-negative" />
                           Frais
                         </div>
                       </SelectItem>
@@ -142,7 +139,7 @@ export function CashManager({ cash, currency, onUpdateCash }: CashManagerProps) 
                   <br />
                   Après opération:{" "}
                   <span className={`font-medium ${
-                    type === "deposit" || type === "interests" ? "text-green-600" : "text-red-600"
+                    type === "deposit" || type === "interests" ? "text-positive" : "text-negative"
                   }`}>
                     {formatCurrency(
                       type === "deposit" || type === "interests"

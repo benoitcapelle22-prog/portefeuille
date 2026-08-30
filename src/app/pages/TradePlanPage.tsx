@@ -10,8 +10,10 @@ import { LTPlanEntry, LTPlanDialog } from "../components/LTPlanDialog";
 import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss, getLTPlans, addLTPlan, updateLTPlan, deleteLTPlan } from "../db";
 import { TransactionDialog } from "../components/TransactionDialog";
 import { usePortfolio } from "../components/PortfolioLayout";
+import { TabNav } from "../components/TabNav";
 import { Transaction } from "../components/TransactionForm";
 import { useQuotes } from "../hooks/useQuotes";
+import { formatDate as formatDateUtil, formatNumberRange } from "../utils/format";
 
 function NotesInput({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -70,12 +72,12 @@ const STATUS_PILL_ACTIVE: Record<string, string> = {
 };
 
 function fmt(s: string) {
-  return new Date(s + "T12:00:00").toLocaleDateString("fr-FR");
+  return formatDateUtil(s);
 }
 
 function fmtNum(v: number | null | undefined, digits = 4) {
   if (v == null) return "—";
-  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: digits }).format(v);
+  return formatNumberRange(v, 2, digits);
 }
 
 function SwingPlanTab() {
@@ -325,9 +327,9 @@ function SwingPlanTab() {
                 <TableCell className="text-right">{plan.quantity}</TableCell>
                 <TableCell className="text-right font-medium">{fmtNum(plan.limitPrice)}</TableCell>
                 <TableCell className="text-right text-amber-600">{fmtNum(plan.apd)}</TableCell>
-                <TableCell className="text-right text-red-600">{fmtNum(plan.stopPrice)}</TableCell>
+                <TableCell className="text-right text-negative">{fmtNum(plan.stopPrice)}</TableCell>
                 <TableCell className="text-right">{fmtNum(plan.riskAmount, 2)}</TableCell>
-                <TableCell className="text-right text-green-600">{fmtNum(plan.tp1)}</TableCell>
+                <TableCell className="text-right text-positive">{fmtNum(plan.tp1)}</TableCell>
                 <TableCell>
                   <Badge variant={STATUS_VARIANTS[plan.status]} className={STATUS_CLASS[plan.status] ?? ""}>
                     {STATUS_LABELS[plan.status]}
@@ -340,7 +342,7 @@ function SwingPlanTab() {
                   const gainPct = plan.salePrice != null && plan.limitPrice > 0
                     ? ((plan.salePrice - plan.limitPrice) / plan.limitPrice) * 100
                     : null;
-                  const cls = gain != null ? (gain >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium") : "text-muted-foreground";
+                  const cls = gain != null ? (gain >= 0 ? "text-positive font-medium" : "text-negative font-medium") : "text-muted-foreground";
                   return (
                     <TableCell className="text-right whitespace-nowrap">
                       <div className={cls}>
@@ -744,19 +746,7 @@ export function TradePlanPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 border-b">
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === t.key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}>
-            <t.icon className={`h-4 w-4 ${t.iconClass}`} />
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === "swing" && <SwingPlanTab />}
 

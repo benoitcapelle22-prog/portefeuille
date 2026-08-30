@@ -11,7 +11,7 @@ const Alert = React.forwardRef<
     role="alert"
     className={`relative w-full rounded-lg border p-4 ${
       variant === "destructive"
-        ? "border-red-500/50 text-red-600 dark:border-red-500 [&>svg]:text-red-600"
+        ? "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive"
         : "border-border"
     } ${className}`}
     {...props}

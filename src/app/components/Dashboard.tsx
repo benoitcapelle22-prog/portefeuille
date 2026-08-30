@@ -8,11 +8,13 @@ import {
   BarChart, Bar
 } from "recharts";
 import { getPricesForDate, fetchAndSavePricesForDate } from "../../services/pricesHistory";
-import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus, Info } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wallet, X, ArrowUp, ArrowDown, Minus, Info, BarChart3, Target } from "lucide-react";
+import { TabNav } from "./TabNav";
 import { useState, useMemo, useEffect } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { formatCurrency as formatCurrencyUtil, formatMonthYear } from "../utils/format";
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#8DD1E1', '#D084D0', '#A4DE6C'];
 
@@ -59,7 +61,7 @@ function normalizeDate(dateStr: string): string {
 
 function deltaColor(val: number, higherIsBetter = true) {
   if (val === 0) return "text-muted-foreground";
-  return (val > 0) === higherIsBetter ? "text-green-600" : "text-red-600";
+  return (val > 0) === higherIsBetter ? "text-positive" : "text-negative";
 }
 
 function DeltaBadge({ val, unit = "", higherIsBetter = true, fmt }: {
@@ -246,7 +248,7 @@ export function Dashboard({
           }
           if (!hasPrice) continue;
 
-          const month = new Date(dateStr).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+          const month = formatMonthYear(dateStr);
           const existing = result.find(r => r.month === month);
           if (existing) { existing.valuation = valuation; existing.invested = invested; }
           else result.push({ month, valuation, invested });
@@ -264,8 +266,7 @@ export function Dashboard({
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("fr-FR", { style: "currency", currency: portfolioCurrency }).format(value);
+  const formatCurrency = (value: number) => formatCurrencyUtil(value, portfolioCurrency);
 
   // Années disponibles pour l'onglet valorisation/performance
   const availableYearsValPerf = useMemo(() => {
@@ -455,7 +456,7 @@ export function Dashboard({
   const dividendsByMonth = filteredTransactions
     .filter(t => t.type === "dividende")
     .reduce((acc, t) => {
-      const month = new Date(t.date).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+      const month = formatMonthYear(t.date);
       const amount = t.unitPrice * t.quantity * t.conversionRate - (t.tax || 0) * t.conversionRate;
       const ex = acc.find(i => i.month === month);
       if (ex) ex.amount += amount; else acc.push({ month, amount });
@@ -580,10 +581,10 @@ export function Dashboard({
     { label: "Perte moyenne",     vN: sN.avgLoss,      vN1: sN1.avgLoss,      fmt: formatCurrency,                      higherIsBetter: false },
   ];
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "valorisation", label: "📊 Valorisation" },
-    { key: "performance",  label: "📈 Performance"  },
-    { key: "trading",      label: "🎯 Stat Trading"  },
+  const tabs = [
+    { key: "valorisation" as Tab, label: "Valorisation", icon: BarChart3 },
+    { key: "performance"  as Tab, label: "Performance",  icon: TrendingUp },
+    { key: "trading"      as Tab, label: "Stat Trading", icon: Target },
   ];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -591,18 +592,7 @@ export function Dashboard({
     <div className="space-y-6">
 
       {/* Onglets */}
-      <div className="flex gap-2 border-b">
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === t.key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {/* Filtre dates + année (valorisation + performance) */}
       {activeTab !== "trading" && (
@@ -677,10 +667,10 @@ export function Dashboard({
                     ? `Latent au 31/12/${yearFilter}`
                     : "Gain/Perte latent"}
                 </CardTitle>
-                {displayUnrealizedGL >= 0 ? <TrendingUp className="h-4 w-4 text-green-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
+                {displayUnrealizedGL >= 0 ? <TrendingUp className="h-4 w-4 text-positive" /> : <TrendingDown className="h-4 w-4 text-negative" />}
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold ${displayUnrealizedGL >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(displayUnrealizedGL)}</div>
+                <div className={`text-2xl font-bold ${displayUnrealizedGL >= 0 ? "text-positive" : "text-negative"}`}>{formatCurrency(displayUnrealizedGL)}</div>
                 <p className="text-xs text-muted-foreground">{displayUnrealizedGLPct >= 0 ? "+" : ""}{displayUnrealizedGLPct.toFixed(2)}%</p>
               </CardContent>
             </Card>
@@ -690,7 +680,7 @@ export function Dashboard({
                 <Activity className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold ${realizedGainLoss >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(realizedGainLoss)}</div>
+                <div className={`text-2xl font-bold ${realizedGainLoss >= 0 ? "text-positive" : "text-negative"}`}>{formatCurrency(realizedGainLoss)}</div>
                 <p className="text-xs text-muted-foreground">Positions clôturées</p>
               </CardContent>
             </Card>
@@ -700,7 +690,7 @@ export function Dashboard({
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">{formatCurrency(totalDividends)}</div>
+                <div className="text-2xl font-bold text-positive">{formatCurrency(totalDividends)}</div>
                 <p className="text-xs text-muted-foreground">Total cumulé</p>
               </CardContent>
             </Card>
@@ -743,7 +733,7 @@ export function Dashboard({
               </CardContent>
             </Card>
             {(() => {
-              const currentMonthLabel = new Date().toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+              const currentMonthLabel = formatMonthYear(new Date());
               const liveTotalValue = positions.reduce((sum, p) => sum + (p.totalValue || p.totalCost), 0);
               const liveCostBasis  = positions.reduce((sum, p) => sum + p.totalCost, 0);
 
@@ -820,7 +810,7 @@ export function Dashboard({
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Gain/Perte Total</p>
-                  <p className={`text-2xl font-bold ${totalGainLoss >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(totalGainLoss)}</p>
+                  <p className={`text-2xl font-bold ${totalGainLoss >= 0 ? "text-positive" : "text-negative"}`}>{formatCurrency(totalGainLoss)}</p>
                   <p className="text-xs text-muted-foreground">{totalGainLossPercent >= 0 ? "+" : ""}{totalGainLossPercent.toFixed(2)}%</p>
                 </div>
                 <div>

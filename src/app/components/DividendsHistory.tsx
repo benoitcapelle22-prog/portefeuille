@@ -6,6 +6,7 @@ import { Transaction } from "./TransactionForm";
 import { Search, X, ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Trash2, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditDividendDialog, type DividendRow } from "./EditDividendDialog";
+import { formatCurrency as formatCurrencyUtil, formatDate as formatDateUtil } from "../utils/format";
 
 interface DividendsHistoryProps {
   transactions: Transaction[];
@@ -79,10 +80,9 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
     </TableHead>
   );
 
-  const formatCurrency = (value: number, currency: string = portfolioCurrency) =>
-    new Intl.NumberFormat("fr-FR", { style: "currency", currency }).format(value);
+  const formatCurrency = (value: number, currency: string = portfolioCurrency) => formatCurrencyUtil(value, currency);
 
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("fr-FR");
+  const formatDate = (dateStr: string) => formatDateUtil(dateStr);
 
   const dividends = localTransactions.filter(t => t.type === "dividende");
 
@@ -372,8 +372,8 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
                         <TableCell>{row.name}</TableCell>
                         <TableCell className="text-right text-muted-foreground text-sm">{row.count}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(row.totalAmount)}</TableCell>
-                        <TableCell className="text-right font-medium text-red-600">{formatCurrency(row.taxAmount)}</TableCell>
-                        <TableCell className="text-right font-medium text-green-600">{formatCurrency(row.netAmount)}</TableCell>
+                        <TableCell className="text-right font-medium text-negative">{formatCurrency(row.taxAmount)}</TableCell>
+                        <TableCell className="text-right font-medium text-positive">{formatCurrency(row.netAmount)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -407,11 +407,11 @@ export function DividendsHistory({ transactions, portfolioCurrency = "EUR", onNe
             <div className="mt-4 flex justify-end">
               <div className="text-right">
                 <p className="text-sm text-muted-foreground">Total des dividendes</p>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(totalDividends)}</p>
+                <p className="text-2xl font-bold text-positive">{formatCurrency(totalDividends)}</p>
                 <p className="text-sm text-muted-foreground">Impôts</p>
-                <p className="text-2xl font-bold text-red-600">{formatCurrency(totalTax)}</p>
+                <p className="text-2xl font-bold text-negative">{formatCurrency(totalTax)}</p>
                 <p className="text-sm text-muted-foreground">Total net</p>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(totalNetDividends)}</p>
+                <p className="text-2xl font-bold text-positive">{formatCurrency(totalNetDividends)}</p>
               </div>
             </div>
           </>

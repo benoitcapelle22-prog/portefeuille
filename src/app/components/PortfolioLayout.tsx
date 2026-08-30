@@ -9,6 +9,8 @@ import { DividendDialog } from "./DividendDialog";
 import { ImportTransactions } from "./ImportTransactions";
 import { TrendingUp, LayoutDashboard, Receipt, Calculator, Download, Upload, HardDrive, PauseCircle, RotateCcw, MoreVertical, RefreshCw, Globe, History, ClipboardList } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
+import { toast } from "sonner";
+import { confirmDialog } from "./ConfirmDialogHost";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
@@ -276,10 +278,10 @@ export function PortfolioLayout() {
       await saveAutoBackupSetting(handle);
       startAutoBackupToFile(handle, { intervalMs: 5 * 60 * 1000 });
       setAutoBackupEnabled(true);
-      alert("✅ Sauvegarde automatique activée.");
+      toast.success("Sauvegarde automatique activée.");
     } catch (err) {
       setAutoBackupEnabled(false);
-      alert(err instanceof Error ? `❌ ${err.message}` : "❌ Impossible d'activer la sauvegarde automatique.");
+      toast.error(err instanceof Error ? err.message : "Impossible d'activer la sauvegarde automatique.");
     }
   };
 
@@ -288,9 +290,9 @@ export function PortfolioLayout() {
       stopAutoBackup();
       setAutoBackupEnabled(false);
       await clearAutoBackupSetting();
-      alert("🛑 Sauvegarde automatique désactivée.");
+      toast.info("Sauvegarde automatique désactivée.");
     } catch {
-      alert("❌ Impossible de désactiver la sauvegarde automatique.");
+      toast.error("Impossible de désactiver la sauvegarde automatique.");
     }
   };
 
@@ -299,13 +301,13 @@ export function PortfolioLayout() {
     if (!setting?.fileHandle) return;
     try {
       const request = await setting.fileHandle.requestPermission({ mode: "readwrite" });
-      if (request !== "granted") { alert("❌ Permission refusée."); return; }
+      if (request !== "granted") { toast.error("Permission refusée."); return; }
       startAutoBackupToFile(setting.fileHandle, { intervalMs: 5 * 60 * 1000 });
       setAutoBackupEnabled(true);
       setAutoBackupNeedsPermission(false);
-      alert("✅ Sauvegarde automatique réactivée.");
+      toast.success("Sauvegarde automatique réactivée.");
     } catch {
-      alert("❌ Impossible de réactiver la sauvegarde automatique.");
+      toast.error("Impossible de réactiver la sauvegarde automatique.");
     }
   };
 
@@ -314,7 +316,7 @@ export function PortfolioLayout() {
   // ============================================================
 
   const handleResetDatabase = async () => {
-    const ok = window.confirm("⚠️ Supprimer toutes les données ?\n\nContinuer ?");
+    const ok = await confirmDialog({ description: "Supprimer toutes les données ?\n\nCette action est irréversible.", confirmLabel: "Supprimer", variant: "destructive" });
     if (!ok) return;
     try {
       await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -323,33 +325,33 @@ export function PortfolioLayout() {
       await supabase.from('daily_prices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('portfolios').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('settings').delete().neq('key', '__never__');
-      alert("✅ Base vidée. L'application va se recharger.");
+      toast.success("Base vidée. L'application va se recharger.");
       window.location.reload();
     } catch (err) {
       console.error(err);
-      alert("❌ Impossible de vider la base.");
+      toast.error("Impossible de vider la base.");
     }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const ok = window.confirm("⚠️ Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?");
+    const ok = await confirmDialog({ description: "Importer ce fichier va remplacer toutes les données actuelles.\n\nContinuer ?", confirmLabel: "Importer", variant: "destructive" });
     if (!ok) { e.target.value = ""; return; }
     try {
       const text = await file.text();
       let data: any;
       try { data = JSON.parse(text); } catch {
-        alert("❌ Fichier invalide : ce n'est pas un JSON valide.");
+        toast.error("Fichier invalide : ce n'est pas un JSON valide.");
         e.target.value = "";
         return;
       }
       await importDatabase(data);
-      alert("✅ Import terminé !");
+      toast.success("Import terminé !");
       window.location.reload();
     } catch (err) {
       console.error(err);
-      alert("❌ Import impossible.");
+      toast.error("Import impossible.");
     } finally {
       e.target.value = "";
     }
@@ -626,7 +628,7 @@ export function PortfolioLayout() {
   const handleSale = async (tx: DBTransaction, newTransactions: Transaction[], targetData: PortfolioData, portfolioId: string) => {
     const existing = targetData.positions.find(p => p.code === tx.code);
     if (!existing) { console.warn(`Vente ignorée : aucune position pour ${tx.code}`); return; }
-    if (existing.quantity < tx.quantity) { alert("Erreur: Quantité insuffisante pour la vente"); return; }
+    if (existing.quantity < tx.quantity) { toast.error("Quantité insuffisante pour la vente"); return; }
 
     const convertedUnitPrice = tx.unitPrice * (tx.conversionRate || 1);
     const totalSale = tx.quantity * convertedUnitPrice - (tx.fees || 0) - (tx.tff || 0);
@@ -660,7 +662,7 @@ export function PortfolioLayout() {
   const handleImportTransactions = async (transactions: Omit<Transaction, "id">[]): Promise<void> => {
     const targetPortfolioId = currentPortfolioId;
     if (!targetPortfolioId || targetPortfolioId === "ALL") {
-      alert("Veuillez sélectionner un portefeuille spécifique avant d'importer.");
+      toast.error("Veuillez sélectionner un portefeuille spécifique avant d'importer.");
       return;
     }
 
@@ -732,7 +734,7 @@ export function PortfolioLayout() {
   // ============================================================
 
   const handleDeleteTransaction = async (id: string) => {
-    if (!confirm("Supprimer cette transaction ?")) return;
+    if (!(await confirmDialog({ description: "Supprimer cette transaction ?", confirmLabel: "Supprimer", variant: "destructive" }))) return;
     if (!currentPortfolioId || currentPortfolioId === "ALL") return;
 
     await dbDeleteTransaction(id);
@@ -1059,7 +1061,7 @@ const handlePositionAction = (action: 'achat' | 'vente' | 'dividende', position:
     }
     if (errors.length > 0) {
       console.error("Erreur sauvegarde stop loss:", errors);
-      alert("Erreur lors de la sauvegarde du stop loss : " + errors[0]);
+      toast.error("Erreur lors de la sauvegarde du stop loss : " + errors[0]);
       return;
     }
     await refreshData();
@@ -1274,7 +1276,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
   const [recalcPRUProgress, setRecalcPRUProgress] = useState<string | null>(null);
 
   const handleBackfillHistory = async () => {
-    if (quoteSymbols.length === 0) { alert("Aucun symbole à récupérer."); return; }
+    if (quoteSymbols.length === 0) { toast.error("Aucun symbole à récupérer."); return; }
     setBackfillLoading(true);
     setBackfillProgress(`0 / ${quoteSymbols.length}`);
     try {
@@ -1293,10 +1295,10 @@ const recalcCashFromDB = async (portfolioId: string) => {
 
   const recalcPRU = async () => {
     if (!currentPortfolioId || currentPortfolioId === "ALL") {
-      alert("Sélectionnez un portefeuille spécifique pour recalculer les PRU.");
+      toast.error("Sélectionnez un portefeuille spécifique pour recalculer les PRU.");
       return;
     }
-    if (!confirm("Recalculer les PRU, positions et liquidités depuis l'historique des transactions ?\n\nLes stop loss et cours manuels seront préservés.")) return;
+    if (!(await confirmDialog({ description: "Recalculer les PRU, positions et liquidités depuis l'historique des transactions ?\n\nLes stop loss et cours manuels seront préservés.", confirmLabel: "Recalculer" }))) return;
 
     setRecalcPRULoading(true);
     setRecalcPRUProgress("Chargement des transactions depuis la base...");
@@ -1445,10 +1447,10 @@ const recalcCashFromDB = async (portfolioId: string) => {
       ? portfolios.map(p => p.id)
       : currentPortfolioId ? [currentPortfolioId] : [];
 
-    if (portfolioIds.length === 0) { alert("Aucun portefeuille sélectionné."); return; }
+    if (portfolioIds.length === 0) { toast.error("Aucun portefeuille sélectionné."); return; }
 
     const label = portfolioIds.length > 1 ? `${portfolioIds.length} portefeuilles` : "1 portefeuille";
-    if (!confirm(`Recalculer les positions et liquidités depuis l'historique des transactions ?\n\n${label} — Les stop loss et cours manuels seront préservés.`)) return;
+    if (!(await confirmDialog({ description: `Recalculer les positions et liquidités depuis l'historique des transactions ?\n\n${label} — Les stop loss et cours manuels seront préservés.`, confirmLabel: "Recalculer" }))) return;
 
     setRecalcPositionsLoading(true);
     let totalOpen = 0, totalClosed = 0;
@@ -1544,16 +1546,16 @@ const recalcCashFromDB = async (portfolioId: string) => {
 
   const handleRecalcCash = async () => {
     if (!currentPortfolioId || currentPortfolioId === "ALL") {
-      alert("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
+      toast.error("Sélectionnez un portefeuille spécifique pour recalculer les liquidités.");
       return;
     }
     setRecalcLoading(true);
     try {
       await recalcCashFromDB(currentPortfolioId);
       await refreshData();
-      alert("✅ Liquidités recalculées.");
+      toast.success("Liquidités recalculées.");
     } catch {
-      alert("❌ Erreur lors du recalcul.");
+      toast.error("Erreur lors du recalcul.");
     } finally {
       setRecalcLoading(false);
     }
@@ -1577,7 +1579,7 @@ const recalcCashFromDB = async (portfolioId: string) => {
           <div className="flex items-center gap-3">
             <TrendingUp className="size-6 sm:size-8 text-primary shrink-0" />
             <h1 className="text-lg sm:text-2xl md:text-3xl leading-tight">Suivi de Portefeuille Boursier</h1>
-            <span className="text-xs text-muted-foreground/50 self-end pb-0.5">v4.19</span>
+            <span className="text-xs text-muted-foreground/50 self-end pb-0.5">v4.20</span>
           </div>
 
           <PortfolioSelector

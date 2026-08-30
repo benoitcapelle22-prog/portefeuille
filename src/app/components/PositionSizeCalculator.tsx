@@ -7,6 +7,7 @@ import { Button } from "./ui/button";
 import { Loader2, PlusCircle } from "lucide-react";
 import { SwingPlanDialog } from "./SwingPlanDialog";
 import { addSwingPlan, getSetting, setSetting } from "../db";
+import { formatCurrency as formatCurrencyUtil, formatNumber } from "../utils/format";
 
 type ProfileKey = "faible" | "moyen" | "normal" | "agressif";
 
@@ -110,10 +111,8 @@ export function PositionSizeCalculator() {
     return { key: profile.key, riskPct, riskEur, nbTitres };
   });
 
-  const fmt = (v: number, d = 2) =>
-    new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(v) + " €";
-  const fmtN = (v: number, d = 2) =>
-    new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
+  const fmt = (v: number, d = 2) => formatCurrencyUtil(v, "EUR", d);
+  const fmtN = (v: number, d = 2) => formatNumber(v, d);
 
   const tdBase = "px-3 py-2 text-center text-sm border-b border-r border-border transition-colors";
   const tdLabel = "px-3 py-2 text-xs font-medium text-left border-b border-r border-border text-muted-foreground whitespace-nowrap";
@@ -239,17 +238,17 @@ export function PositionSizeCalculator() {
                     ))}
                   </tr>
                   <tr>
-                    <td className={`${tdLabel} bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400`}>Achat</td>
+                    <td className={`${tdLabel} bg-positive/10 text-positive`}>Achat</td>
                     {tableData.map(d => (
-                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 ${riskProfile === d.key ? "font-semibold" : "opacity-60"}`}>
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} bg-positive/10 text-positive ${riskProfile === d.key ? "font-semibold" : "opacity-60"}`}>
                         {buy > 0 ? fmtN(buy, 2) + " €" : "–"}
                       </td>
                     ))}
                   </tr>
                   <tr>
-                    <td className={`${tdLabel} bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400`}>Stop loss</td>
+                    <td className={`${tdLabel} bg-negative/10 text-negative`}>Stop loss</td>
                     {tableData.map(d => (
-                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 ${riskProfile === d.key ? "font-semibold" : "opacity-60"}`}>
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} bg-negative/10 text-negative ${riskProfile === d.key ? "font-semibold" : "opacity-60"}`}>
                         {stop > 0 ? fmtN(stop, 2) + " €" : "–"}
                       </td>
                     ))}

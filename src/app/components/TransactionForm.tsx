@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader } from "./ui/card";
 import { Portfolio } from "./PortfolioSelector";
 import { Badge } from "./ui/badge";
 import { Loader2, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
 
 export interface Transaction {
   id: string;
@@ -187,7 +188,7 @@ export function TransactionForm({ onAddTransaction, currentPortfolio, portfolios
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !name || !quantity || !unitPrice) {
-      alert("Veuillez remplir tous les champs obligatoires");
+      toast.error("Veuillez remplir tous les champs obligatoires");
       return;
     }
     const calculatedTFF = type === "achat" && autoTFF ? (parseFloat(tff) || calculateTFF()) : 0;

@@ -11,6 +11,7 @@ import { TransactionDialog } from "./TransactionDialog";
 import { DividendDialog } from "./DividendDialog";
 import { Portfolio } from "./PortfolioSelector";
 import * as XLSX from "xlsx";
+import { formatCurrency as formatCurrencyUtil, formatCurrencyRange, formatDate as formatDateUtil } from "../utils/format";
 
 interface TransactionHistoryProps {
   transactions: Transaction[];
@@ -85,14 +86,10 @@ export function TransactionHistory({
     setCurrentPage(1);
   }, [searchFilter, startDate, endDate, yearFilter, typeFilter, sortKey, sortDir]);
 
-  const formatCurrency = (value: number, currency?: string) => {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: currency || portfolioCurrency || "EUR",
-    }).format(value);
-  };
+  const formatCurrency = (value: number, currency?: string) =>
+    formatCurrencyUtil(value, currency || portfolioCurrency || "EUR");
 
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("fr-FR");
+  const formatDate = (dateStr: string) => formatDateUtil(dateStr);
 
   const getTotal = (transaction: Transaction) => {
     const rate = transaction.conversionRate || 1;
@@ -424,12 +421,7 @@ export function TransactionHistory({
                         <TableCell>{getTypeBadge(transaction.type)}</TableCell>
                         <TableCell className="text-right">{transaction.quantity}</TableCell>
                         <TableCell className="text-right">
-                          {new Intl.NumberFormat("fr-FR", {
-                            style: "currency",
-                            currency: transaction.currency || portfolioCurrency,
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 6,
-                          }).format(transaction.unitPrice)}
+                          {formatCurrencyRange(transaction.unitPrice, transaction.currency || portfolioCurrency, 2, 6)}
                         </TableCell>
                         <TableCell>{transaction.currency}</TableCell>
                         <TableCell className="text-right">{formatCurrency(transaction.fees)}</TableCell>

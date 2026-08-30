@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { formatDate as formatDateUtil, formatCurrency as formatCurrencyUtil } from "../utils/format";
 
 export interface SwingPlanEntry {
   id?: string;
@@ -89,7 +90,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
     }
   }, [open]);
 
-  const fmt = (s: string) => new Date(s + "T12:00:00").toLocaleDateString("fr-FR");
+  const fmt = (s: string) => formatDateUtil(s);
 
   const handleSave = () => {
     const entry: SwingPlanEntry = {
@@ -161,7 +162,7 @@ export function SwingPlanDialog({ open, onOpenChange, initialValues, editPlan, o
           <div className="space-y-1">
             <Label className="text-xs">Risque (€)</Label>
             <div className="h-9 flex items-center justify-end px-3 rounded-md border bg-muted font-medium text-sm">
-              {new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(computedRisk)} €
+              {formatCurrencyUtil(computedRisk, "EUR", 2)}
             </div>
           </div>
           <div className="space-y-1">

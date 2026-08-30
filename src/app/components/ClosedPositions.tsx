@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Transaction } from "./TransactionForm";
 import { Search, X, Eye, EyeOff, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { formatCurrency as formatCurrencyUtil, formatDate as formatDateUtil, formatSignedPercent } from "../utils/format";
 
 export interface ClosedPosition {
   code: string;
@@ -44,10 +45,9 @@ function ByOperationView({ closedPositions, portfolioCurrency, showSector }: { c
 
   useEffect(() => { setCurrentPage(1); }, [closedPositions, sortKey, sortDir]);
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: portfolioCurrency }).format(value);
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('fr-FR');
-  const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  const formatCurrency = (value: number) => formatCurrencyUtil(value, portfolioCurrency);
+  const formatDate = (dateStr: string) => formatDateUtil(dateStr);
+  const formatPercent = (value: number) => formatSignedPercent(value);
 
   const handleSort = (key: SortKeyOp) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -125,8 +125,8 @@ function ByOperationView({ closedPositions, portfolioCurrency, showSector }: { c
                 <TableCell className="text-right">{p.quantity}</TableCell>
                 <TableCell className="text-right">{formatCurrency(p.totalPurchase)}</TableCell>
                 <TableCell className="text-right">{formatCurrency(p.totalSale)}</TableCell>
-                <TableCell className={`text-right ${p.gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(p.gainLoss)}</TableCell>
-                <TableCell className={`text-right ${p.gainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(p.gainLossPercent)}</TableCell>
+                <TableCell className={`text-right ${p.gainLoss >= 0 ? 'text-positive' : 'text-negative'}`}>{formatCurrency(p.gainLoss)}</TableCell>
+                <TableCell className={`text-right ${p.gainLossPercent >= 0 ? 'text-positive' : 'text-negative'}`}>{formatPercent(p.gainLossPercent)}</TableCell>
               </TableRow>
             ))}
             <TableRow className="border-t-2 font-bold bg-muted/50">
@@ -134,8 +134,8 @@ function ByOperationView({ closedPositions, portfolioCurrency, showSector }: { c
               <TableCell colSpan={showSector ? 5 : 4}>TOTAL</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested + totalGainLoss)}</TableCell>
-              <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(totalGainLoss)}</TableCell>
-              <TableCell className={`text-right ${totalGainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(totalGainLossPercent)}</TableCell>
+              <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-positive' : 'text-negative'}`}>{formatCurrency(totalGainLoss)}</TableCell>
+              <TableCell className={`text-right ${totalGainLossPercent >= 0 ? 'text-positive' : 'text-negative'}`}>{formatPercent(totalGainLossPercent)}</TableCell>
             </TableRow>
           </TableBody>
         </Table>
@@ -195,9 +195,8 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency, showSec
 
   useEffect(() => { setCurrentPage(1); }, [closedPositions, sortKey, sortDir]);
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: portfolioCurrency }).format(value);
-  const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  const formatCurrency = (value: number) => formatCurrencyUtil(value, portfolioCurrency);
+  const formatPercent = (value: number) => formatSignedPercent(value);
 
   const titleRows: TitleRow[] = useMemo(() => {
     const map: Record<string, TitleRow> = {};
@@ -299,13 +298,13 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency, showSec
                 <TableCell className="text-right text-muted-foreground text-xs">{r.ops}</TableCell>
                 <TableCell className="text-right">{formatCurrency(r.totalPurchase)}</TableCell>
                 <TableCell className="text-right">{formatCurrency(r.totalSale)}</TableCell>
-                <TableCell className={`text-right ${r.gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <TableCell className={`text-right ${r.gainLoss >= 0 ? 'text-positive' : 'text-negative'}`}>
                   <div>{formatCurrency(r.gainLoss)}</div>
                   <div className="text-xs">{formatPercent(r.gainLossPercent)}</div>
                 </TableCell>
-                <TableCell className={`text-right ${r.gainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(r.gainLossPercent)}</TableCell>
+                <TableCell className={`text-right ${r.gainLossPercent >= 0 ? 'text-positive' : 'text-negative'}`}>{formatPercent(r.gainLossPercent)}</TableCell>
                 <TableCell className="text-right text-blue-600">{formatCurrency(r.dividends)}</TableCell>
-                <TableCell className={`text-right font-medium ${r.totalWithDiv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <TableCell className={`text-right font-medium ${r.totalWithDiv >= 0 ? 'text-positive' : 'text-negative'}`}>
                   <div>{formatCurrency(r.totalWithDiv)}</div>
                   <div className="text-xs">{formatPercent(r.totalWithDivPercent)}</div>
                 </TableCell>
@@ -317,13 +316,13 @@ function ByTitleView({ closedPositions, transactions, portfolioCurrency, showSec
               <TableCell className="text-right text-muted-foreground text-xs">{titleRows.reduce((s, r) => s + r.ops, 0)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested)}</TableCell>
               <TableCell className="text-right">{formatCurrency(totalInvested + totalGainLoss)}</TableCell>
-              <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <TableCell className={`text-right ${totalGainLoss >= 0 ? 'text-positive' : 'text-negative'}`}>
                 <div>{formatCurrency(totalGainLoss)}</div>
                 <div className="text-xs">{formatPercent(totalGainLossPercent)}</div>
               </TableCell>
-              <TableCell className={`text-right ${totalGainLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPercent(totalGainLossPercent)}</TableCell>
+              <TableCell className={`text-right ${totalGainLossPercent >= 0 ? 'text-positive' : 'text-negative'}`}>{formatPercent(totalGainLossPercent)}</TableCell>
               <TableCell className="text-right text-blue-600">{formatCurrency(totalDividends)}</TableCell>
-              <TableCell className={`text-right font-medium ${totalWithDiv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <TableCell className={`text-right font-medium ${totalWithDiv >= 0 ? 'text-positive' : 'text-negative'}`}>
                 <div>{formatCurrency(totalWithDiv)}</div>
                 <div className="text-xs">{formatPercent(totalWithDivPercent)}</div>
               </TableCell>

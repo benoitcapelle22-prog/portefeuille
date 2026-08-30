@@ -3,6 +3,7 @@ import { Bell } from "lucide-react";
 import { getLTPlans } from "../db";
 import { LTPlanEntry } from "./LTPlanDialog";
 import { useQuotes } from "../hooks/useQuotes";
+import { formatNumberRange, formatDate } from "../utils/format";
 
 export interface LTNotification {
   id: string;
@@ -43,11 +44,11 @@ function alertLabel(n: LTNotification) {
 }
 
 function fmtP(v: number) {
-  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(v);
+  return formatNumberRange(v, 2, 4);
 }
 
 function fmtDate(d: string) {
-  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR");
+  return formatDate(d);
 }
 
 export function NotificationCenter() {

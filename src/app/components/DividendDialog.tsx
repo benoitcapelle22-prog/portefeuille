@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Portfolio } from "./PortfolioSelector";
 import { Transaction } from "./TransactionForm";
 import { useExchangeRates } from "../hooks/useExchangeRates";
+import { toast } from "sonner";
 
 type Currency = "EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";
 
@@ -170,7 +171,7 @@ export function DividendDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !name || !quantity || !divPerShare) {
-      alert("Veuillez remplir tous les champs obligatoires");
+      toast.error("Veuillez remplir tous les champs obligatoires");
       return;
     }
     const storedConvRate = isForeignCurrency ? convRate : 1;

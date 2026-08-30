@@ -5,6 +5,7 @@ import { ClosedPositions } from "../components/ClosedPositions";
 import { TransactionHistory } from "../components/TransactionHistory";
 import { DividendsHistory } from "../components/DividendsHistory";
 import { usePortfolio } from "../components/PortfolioLayout";
+import { TabNav } from "../components/TabNav";
 import { useExchangeRates } from "../hooks/useExchangeRates";
 
 export function TransactionsPage() {
@@ -61,19 +62,7 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 border-b">
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === t.key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}>
-            <t.icon className={`h-4 w-4 ${t.iconClass}`} />
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       <div className={activeTab !== "positions" ? "hidden" : ""}>
         <CurrentPositions

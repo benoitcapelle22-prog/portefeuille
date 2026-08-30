@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import {
   MoreHorizontal,
@@ -49,6 +50,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { useQuotes } from "../hooks/useQuotes";
 import { useHistoricalPrices } from "../hooks/useHistoricalPrices";
 import { fetchAndSavePricesForDate } from "../../services/pricesHistory";
+import { formatCurrency as formatCurrencyUtil, formatCurrencyRange, formatDate as formatDateUtil } from "../utils/format";
 
 export interface Position {
   code: string;
@@ -287,7 +289,7 @@ export function CurrentPositions({
 
   const formatCurrency = (value?: number, currency?: string) => {
     if (value === undefined || value === null || Number.isNaN(value)) return "-";
-    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: currency || portfolioCurrency }).format(value);
+    return formatCurrencyUtil(value, currency || portfolioCurrency);
   };
 
   const formatPercent = (value?: number) => {
@@ -486,8 +488,8 @@ export function CurrentPositions({
   const handleSubmit = () => {
     if (!onUpdateCash) return;
     const amountValue = parseFloat(amount);
-    if (Number.isNaN(amountValue) || amountValue <= 0) { alert("Veuillez saisir un montant valide"); return; }
-    if ((type === "withdrawal" || type === "fees") && amountValue > cash) { alert("Montant insuffisant dans les liquidités"); return; }
+    if (Number.isNaN(amountValue) || amountValue <= 0) { toast.error("Veuillez saisir un montant valide"); return; }
+    if ((type === "withdrawal" || type === "fees") && amountValue > cash) { toast.error("Montant insuffisant dans les liquidités"); return; }
     onUpdateCash(amountValue, type, date);
     setAmount("");
     setIsDialogOpen(false);
@@ -558,7 +560,7 @@ export function CurrentPositions({
                 ) : (
                   <>
                     <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Cours au {new Date(endDate).toLocaleDateString("fr-FR")}
+                      Cours au {formatDateUtil(endDate)}
                     </span>
                     {fetchResultMsg && (
                       <span className={`text-xs ${fetchResultMsg.startsWith("Aucun") ? "text-red-500" : "text-green-600"}`}>
@@ -678,12 +680,7 @@ export function CurrentPositions({
                       {showCurrency && <TableCell className="text-center">{positionCurrency}</TableCell>}
                       <TableCell className="text-right">{position.quantity}</TableCell>
                       <TableCell className="text-right">
-                        {new Intl.NumberFormat("fr-FR", {
-                          style: "currency",
-                          currency: portfolioCurrency,
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 4
-                        }).format(position.pru)}
+                        {formatCurrencyRange(position.pru, portfolioCurrency, 2, 4)}
                       </TableCell>
 
                       {/* Montant d'entrée */}
@@ -709,7 +706,7 @@ export function CurrentPositions({
                         {formatCurrency(totalValueConverted, portfolioCurrency)}
                         {isForeign && totalValueRaw !== undefined && (
                           <div className="text-xs text-muted-foreground">
-                            {new Intl.NumberFormat("fr-FR", { style: "currency", currency: positionCurrency, maximumFractionDigits: 2 }).format(totalValueRaw)}
+                            {formatCurrencyUtil(totalValueRaw, positionCurrency, 2)}
                           </div>
                         )}
                       </TableCell>
@@ -725,7 +722,7 @@ export function CurrentPositions({
 
                       {/* +/- Value latente convertie */}
                       <TableCell className="text-right whitespace-nowrap">
-                        <div className={latentVal >= 0 ? "text-green-600" : "text-red-600"}>
+                        <div className={latentVal >= 0 ? "text-positive" : "text-negative"}>
                           {formatCurrency(latentGainLossConverted, portfolioCurrency)}
                         </div>
                         <div className="text-xs text-muted-foreground">{formatPercent(latentPct)}</div>
@@ -740,7 +737,7 @@ export function CurrentPositions({
                             />
                           </TableCell>
                           <TableCell className="text-right whitespace-nowrap">
-                            <div className={(risk ?? 0) >= 0 ? "text-green-600" : "text-red-600"}>
+                            <div className={(risk ?? 0) >= 0 ? "text-positive" : "text-negative"}>
                               {risk !== undefined ? formatCurrency(risk, portfolioCurrency) : "-"}
                             </div>
                             <div className="text-xs text-muted-foreground">
@@ -789,7 +786,7 @@ export function CurrentPositions({
                     </TableCell>
                   )}
                   <TableCell className="text-right whitespace-nowrap">
-                    <div className={totalLatentGainLoss >= 0 ? "text-green-600" : "text-red-600"}>
+                    <div className={totalLatentGainLoss >= 0 ? "text-positive" : "text-negative"}>
                       {formatCurrency(totalLatentGainLoss, portfolioCurrency)}
                     </div>
                     <div className="text-xs text-muted-foreground">{formatPercent(totalLatentGainLossPercent)}</div>
@@ -798,7 +795,7 @@ export function CurrentPositions({
                     <>
                       <TableCell></TableCell>
                       <TableCell className="text-right whitespace-nowrap">
-                        <div className={totalRisk >= 0 ? "text-green-600" : "text-red-600"}>
+                        <div className={totalRisk >= 0 ? "text-positive" : "text-negative"}>
                           {formatCurrency(totalRisk, portfolioCurrency)}
                         </div>
                         <div className="text-xs text-muted-foreground">{formatPercent(totalRiskPercent)}</div>
@@ -838,7 +835,7 @@ export function CurrentPositions({
                                   <SelectContent>
                                     <SelectItem value="deposit">
                                       <div className="flex items-center gap-2">
-                                        <Plus className="h-4 w-4 text-green-600" />Dépôt
+                                        <Plus className="h-4 w-4 text-positive" />Dépôt
                                       </div>
                                     </SelectItem>
                                     <SelectItem value="withdrawal">
@@ -848,7 +845,7 @@ export function CurrentPositions({
                                     </SelectItem>
                                     <SelectItem value="fees">
                                       <div className="flex items-center gap-2">
-                                        <Minus className="h-4 w-4 text-red-700" />Frais
+                                        <Minus className="h-4 w-4 text-negative" />Frais
                                       </div>
                                     </SelectItem>
                                     <SelectItem value="interests">
@@ -874,7 +871,7 @@ export function CurrentPositions({
                                 Liquidités actuelles: <span className="font-medium">{formatCurrency(cash, portfolioCurrency)}</span>
                                 <br />
                                 Après opération:{" "}
-                                <span className={`font-medium ${type === "deposit" || type === "interests" ? "text-green-600" : "text-red-600"}`}>
+                                <span className={`font-medium ${type === "deposit" || type === "interests" ? "text-positive" : "text-negative"}`}>
                                   {formatCurrency(
                                     type === "deposit" || type === "interests" ? cash + (parseFloat(amount) || 0) : cash - (parseFloat(amount) || 0),
                                     portfolioCurrency
@@ -957,7 +954,7 @@ export function CurrentPositions({
                   const maxAllowedRisk = totalPortfolio * effectiveRiskPct / 100;
                   const isOverLimit = totalRisk < 0 && Math.abs(totalRisk) > maxAllowedRisk;
                   return (
-                    <TableRow className={`font-bold ${totalRisk >= 0 ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"}`}>
+                    <TableRow className={`font-bold ${totalRisk >= 0 ? "bg-positive/10" : "bg-negative/10"}`}>
                       <TableCell colSpan={prefixColSpan} className="text-sm italic">RISQUE TOTAL (Trading)</TableCell>
                       <TableCell className="text-right"></TableCell>{/* Montant d'entrée */}
                       <TableCell className="text-right"></TableCell>{/* Cours actuel */}
@@ -965,11 +962,11 @@ export function CurrentPositions({
                       <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
                       <TableCell className="text-right text-xs">
                         <div className="text-muted-foreground">Max autorisé</div>
-                        <div className={`font-semibold ${isOverLimit ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                        <div className={`font-semibold ${isOverLimit ? "text-negative" : "text-muted-foreground"}`}>
                           {effectiveRiskPct.toFixed(2)}% — {formatCurrency(maxAllowedRisk, portfolioCurrency)}
                         </div>
                       </TableCell>{/* Stop Loss → risque max autorisé */}
-                      <TableCell className={`text-right text-sm ${totalRisk >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+                      <TableCell className={`text-right text-sm ${totalRisk >= 0 ? "text-positive" : "text-negative"}`}>
                         <div>{formatCurrency(totalRisk, portfolioCurrency)}</div>
                         <div className="text-xs font-normal opacity-75">{totalRiskPercent.toFixed(2)}%</div>
                       </TableCell>{/* Risque */}
