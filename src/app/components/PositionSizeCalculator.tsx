@@ -1,20 +1,20 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Calculator, Loader2, PlusCircle } from "lucide-react";
+import { Loader2, PlusCircle } from "lucide-react";
 import { SwingPlanDialog } from "./SwingPlanDialog";
 import { addSwingPlan, getSetting, setSetting } from "../db";
 
 type ProfileKey = "faible" | "moyen" | "normal" | "agressif";
 
-const PROFILES: { key: ProfileKey; label: string; fullLabel: string; mult: number; headerCls: string }[] = [
-  { key: "faible",   label: "R1", fullLabel: "FAIBLE",   mult: 0.50, headerCls: "bg-blue-500 hover:bg-blue-600" },
-  { key: "moyen",    label: "R2", fullLabel: "MOYEN",    mult: 0.75, headerCls: "bg-green-500 hover:bg-green-600" },
-  { key: "normal",   label: "R3", fullLabel: "NORMAL",   mult: 1.00, headerCls: "bg-pink-500 hover:bg-pink-600" },
-  { key: "agressif", label: "R4", fullLabel: "AGRESSIF", mult: 2.00, headerCls: "bg-yellow-400 hover:bg-yellow-500" },
+const PROFILES: { key: ProfileKey; fullLabel: string; mult: number; color: string }[] = [
+  { key: "faible",   fullLabel: "FAIBLE",   mult: 0.50, color: "#7aaa8a" },
+  { key: "moyen",    fullLabel: "MOYEN",    mult: 0.75, color: "#c8b460" },
+  { key: "normal",   fullLabel: "NORMAL",   mult: 1.00, color: "#d48060" },
+  { key: "agressif", fullLabel: "AGRESSIF", mult: 2.00, color: "#c45040" },
 ];
 
 export function PositionSizeCalculator() {
@@ -79,7 +79,6 @@ export function PositionSizeCalculator() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [code]);
 
-  // Derived numeric values
   const cap = parseFloat(capital) || 0;
   const buy = parseFloat(buyPrice) || 0;
   const stop = parseFloat(stopLoss) || 0;
@@ -103,15 +102,12 @@ export function PositionSizeCalculator() {
 
   const triggerRange = 0.35;
   const upperBound = buy * (1 + triggerRange / 100);
-  const lowerBound = buy * (1 - triggerRange / 100);
 
-  // Per-profile table data — pas de contrainte ligne max ici (uniquement dans la calculette)
   const tableData = PROFILES.map(profile => {
     const riskPct = baseRiskValue * profile.mult;
     const riskEur = cap * riskPct / 100;
     const nbTitres = riskPerAction > 0 ? Math.floor(riskEur / riskPerAction) : 0;
-    const poidsLigne = cap > 0 ? (nbTitres * buy / cap) * 100 : 0;
-    return { key: profile.key, riskPct, riskEur, nbTitres, poidsLigne };
+    return { key: profile.key, riskPct, riskEur, nbTitres };
   });
 
   const fmt = (v: number, d = 2) =>
@@ -119,125 +115,211 @@ export function PositionSizeCalculator() {
   const fmtN = (v: number, d = 2) =>
     new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
 
-  const tdBase = "px-3 py-2 text-center text-sm border border-gray-200 dark:border-gray-700";
-  const tdLabel = "px-3 py-2 text-xs font-semibold text-left border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 text-gray-700 dark:text-gray-300 whitespace-nowrap";
+  const tdBase = "px-3 py-2 text-center text-sm border-b border-r border-border transition-colors";
+  const tdLabel = "px-3 py-2 text-xs font-medium text-left border-b border-r border-border text-muted-foreground whitespace-nowrap";
+  const tdSel = (selected: boolean) => selected ? "font-semibold text-foreground" : "text-muted-foreground";
+  const selBorderSide = (selected: boolean): React.CSSProperties =>
+    selected ? { borderLeft: `2px solid ${profileConfig.color}`, borderRight: `2px solid ${profileConfig.color}` } : {};
+  const selBorderTop = (selected: boolean): React.CSSProperties =>
+    selected ? { borderLeft: `2px solid ${profileConfig.color}`, borderRight: `2px solid ${profileConfig.color}`, borderTop: `2px solid ${profileConfig.color}` } : {};
+  const selBorderBottom = (selected: boolean): React.CSSProperties =>
+    selected ? { borderLeft: `2px solid ${profileConfig.color}`, borderRight: `2px solid ${profileConfig.color}`, borderBottom: `2px solid ${profileConfig.color}` } : {};
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* ── Calculette ─────────────────────────────────────────── */}
-      <Card className="border-2 border-primary/20">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 border-b-2">
-          <div className="flex items-center gap-3">
-            <Calculator className="h-6 w-6 text-primary" />
-            <CardTitle className="text-lg font-bold uppercase tracking-wide">Action</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid gap-4">
-            {/* Code + Nom */}
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold flex items-center gap-1">
-                  Code action {fetchLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+    <div className="grid grid-cols-1 gap-6">
+      <Card>
+<CardContent className="p-6">
+          <div className="grid gap-5">
+
+            {/* Paramètres */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Capital (€)</Label>
+                <Input
+                  type="number" step="0.01" value={capital}
+                  onChange={e => { setCapital(e.target.value); localStorage.setItem("psc_capital", e.target.value); saveCapital(e.target.value); }}
+                  className="text-right font-semibold"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Risque base (%)</Label>
+                <Input
+                  type="number" step="0.01" value={baseRiskInput}
+                  onChange={e => { setBaseRiskInput(e.target.value); localStorage.setItem("psc_baseRisk", e.target.value); saveBaseRisk(e.target.value); }}
+                  className="text-right font-semibold"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Ligne max (%)</Label>
+                <Input
+                  type="number" step="0.5" min="0" max="100" value={maxLinePercent}
+                  onChange={e => { setMaxLinePercent(e.target.value); saveMaxLine(e.target.value); }}
+                  className="text-right font-semibold"
+                />
+              </div>
+            </div>
+
+            {/* Action : code, nom, achat, stop — tout sur une ligne */}
+            <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-3 items-end">
+              <div className="space-y-1.5 w-32">
+                <Label className="text-xs flex items-center gap-1">
+                  Code {fetchLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                 </Label>
                 <Input
                   type="text"
-                  placeholder="Ex: MC.PA"
+                  placeholder="MC.PA"
                   value={code}
                   onChange={e => { setCode(e.target.value.toUpperCase()); nameTouchedRef.current = false; }}
-                  className="h-10 font-mono border-2"
+                  className="font-mono"
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Nom</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nom</Label>
                 <Input
                   type="text"
                   placeholder="Nom de l'action"
                   value={name}
                   onChange={e => { setName(e.target.value); nameTouchedRef.current = true; }}
-                  className="h-10 border-2"
                 />
               </div>
-            </div>
-
-            {/* Prix achat + Stop */}
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Prix d'achat</Label>
+              <div className="space-y-1.5 w-32">
+                <Label className="text-xs">Prix d'achat</Label>
                 <Input
                   type="number" step="0.01" value={buyPrice}
                   onChange={e => setBuyPrice(e.target.value)}
-                  className="h-12 text-right font-bold text-lg border-2"
+                  className="text-right font-semibold"
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">STOP</Label>
+              <div className="space-y-1.5 w-32">
+                <Label className="text-xs">Stop loss</Label>
                 <Input
                   type="number" step="0.01" value={stopLoss}
                   onChange={e => setStopLoss(e.target.value)}
-                  className="h-12 text-right font-bold text-lg border-2"
+                  className="text-right font-semibold"
                 />
               </div>
-              <Badge variant={stopPercent < 0 ? "destructive" : "default"} className="h-12 px-3 text-sm flex items-center">
+              <Badge variant={stopPercent < 0 ? "destructive" : "secondary"} className="h-9 px-3 text-sm flex items-center mb-0.5">
                 {stopPercent.toFixed(2)}%
               </Badge>
             </div>
 
+            {/* Tableau */}
+            <div className="rounded-md border border-border overflow-hidden">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    <th className="px-3 py-2.5 text-left text-xs text-muted-foreground border-b border-r border-border bg-muted/40 w-[28%]"></th>
+                    {PROFILES.map(p => (
+                      <th
+                        key={p.key}
+                        style={{ backgroundColor: p.color, ...selBorderTop(riskProfile === p.key) }}
+                        className={`px-3 py-2.5 text-center text-white font-bold text-sm border-b border-r border-border cursor-pointer select-none transition-all ${riskProfile === p.key ? "opacity-100" : "opacity-60 hover:opacity-80"}`}
+                        onClick={() => setRiskProfile(p.key)}
+                      >
+                        {p.fullLabel}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className={tdLabel}>% risque</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} ${tdSel(riskProfile === d.key)}`}>
+                        {fmtN(d.riskPct, 2)}%
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={tdLabel}>Risque en €</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} ${tdSel(riskProfile === d.key)}`}>
+                        {cap > 0 ? fmtN(d.riskEur, 0) + " €" : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={`${tdLabel} bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400`}>Achat</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 ${riskProfile === d.key ? "font-semibold" : "opacity-60"}`}>
+                        {buy > 0 ? fmtN(buy, 2) + " €" : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={`${tdLabel} bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400`}>Stop loss</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 ${riskProfile === d.key ? "font-semibold" : "opacity-60"}`}>
+                        {stop > 0 ? fmtN(stop, 2) + " €" : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={tdLabel}>Nombre de titres</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} ${tdSel(riskProfile === d.key)} ${riskProfile === d.key ? "text-base" : ""}`}>
+                        {d.nbTitres > 0 ? d.nbTitres : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={tdLabel}>Poids ligne</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} ${tdSel(riskProfile === d.key)}`}>
+                        {d.nbTitres > 0 && buy > 0 ? fmtN(d.nbTitres * buy, 0) + " €" : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={tdLabel}>% du Capital engagé</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderSide(riskProfile === d.key)} className={`${tdBase} ${tdSel(riskProfile === d.key)}`}>
+                        {d.nbTitres > 0 && buy > 0 && cap > 0 ? fmtN((d.nbTitres * buy / cap) * 100, 1) + "%" : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className={`${tdLabel} border-b-0`}>Borne au dessus (APD)</td>
+                    {tableData.map(d => (
+                      <td key={d.key} style={selBorderBottom(riskProfile === d.key)} className={`${tdBase} border-b-0 ${tdSel(riskProfile === d.key)}`}>
+                        {buy > 0 ? upperBound.toFixed(3) : "–"}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
             {/* Résultats profil sélectionné */}
-            <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg border-2 ${
-              isLineSizeConstrained
-                ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
-                : "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800"
-            }`}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg border bg-muted/30">
               <div className="text-center">
-                <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
                   Actions à acheter
                   {isLineSizeConstrained && (
-                    <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded-full font-medium">ligne max</span>
+                    <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">ligne max</span>
                   )}
                 </div>
-                <div className={`text-3xl font-bold ${isLineSizeConstrained ? "text-amber-600 dark:text-amber-400" : "text-teal-600 dark:text-teal-400"}`}>
-                  {effectiveShares}
-                </div>
+                <div className="text-3xl font-bold">{effectiveShares}</div>
                 <div className="text-xs text-muted-foreground mt-1">{fmtN(riskPerAction)} € / action</div>
               </div>
-              <div className={`text-center border-l-2 border-r-2 ${isLineSizeConstrained ? "border-amber-200 dark:border-amber-800" : "border-teal-200 dark:border-teal-800"}`}>
-                <div className="text-sm text-muted-foreground mb-1">Montant investi</div>
-                <div className={`text-2xl font-bold ${isLineSizeConstrained ? "text-amber-700 dark:text-amber-300" : "text-teal-700 dark:text-teal-300"}`}>
-                  {fmt(effectiveInvested, 0)}
-                </div>
+              <div className="text-center border-l border-r border-border">
+                <div className="text-xs text-muted-foreground mb-1">Montant investi</div>
+                <div className="text-2xl font-bold">{fmt(effectiveInvested, 0)}</div>
                 <div className="text-xs text-muted-foreground mt-1">{effectivePct.toFixed(2)}% du PTF</div>
               </div>
               <div className="text-center">
-                <div className="text-sm text-muted-foreground mb-1">½ position</div>
-                <div className={`text-3xl font-bold ${isLineSizeConstrained ? "text-amber-600 dark:text-amber-400" : "text-teal-600 dark:text-teal-400"}`}>
-                  {effectiveHalf}
-                </div>
+                <div className="text-xs text-muted-foreground mb-1">½ position</div>
+                <div className="text-3xl font-bold">{effectiveHalf}</div>
                 <div className="text-xs text-muted-foreground mt-1">{effectiveHalfPct.toFixed(2)}% • {fmt(effectiveHalfRisk)}</div>
               </div>
             </div>
 
-            {/* Plage APD */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border-2 border-yellow-200 dark:border-yellow-800">
-              <div>
-                <div className="text-xs text-muted-foreground">Taille plage déclenchement</div>
-                <div className="text-lg font-bold text-yellow-700 dark:text-yellow-400">{triggerRange.toFixed(2)}%</div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Borne au dessus (APD)</div>
-                <div className="text-lg font-bold">{upperBound.toFixed(3)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Borne en dessous (APD)</div>
-                <div className="text-lg font-bold">{lowerBound.toFixed(3)}</div>
-              </div>
-            </div>
-
             {/* Bouton swing */}
-            <div className="flex justify-end pt-1">
+            <div className="flex justify-end">
               <Button
                 variant="outline"
-                className="gap-2 border-primary/40 text-primary hover:bg-primary/5"
+                size="sm"
+                className="gap-2"
                 onClick={() => setSwingDialogOpen(true)}
                 disabled={!code || effectiveShares === 0}
               >
@@ -245,134 +327,7 @@ export function PositionSizeCalculator() {
                 Ajouter au plan swing
               </Button>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* ── Le money management ────────────────────────────────── */}
-      <Card className="border-2 border-green-200 dark:border-green-800">
-        <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950 border-b-2">
-          <div className="flex items-center gap-3">
-            <CardTitle className="text-lg font-bold uppercase tracking-wide">Le money management</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="p-5">
-          {/* Paramètres */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Capital (€)</Label>
-              <Input
-                type="number" step="0.01" value={capital}
-                onChange={e => { setCapital(e.target.value); localStorage.setItem("psc_capital", e.target.value); saveCapital(e.target.value); }}
-                className="h-10 text-right font-bold bg-cyan-50 dark:bg-cyan-900/40 border-2 border-cyan-300 dark:border-cyan-700"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Risque base (%)</Label>
-              <Input
-                type="number" step="0.01" value={baseRiskInput}
-                onChange={e => { setBaseRiskInput(e.target.value); localStorage.setItem("psc_baseRisk", e.target.value); saveBaseRisk(e.target.value); }}
-                className="h-10 text-right font-bold bg-pink-50 dark:bg-pink-900/40 border-2 border-pink-300 dark:border-pink-700"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Ligne max (%)</Label>
-              <Input
-                type="number" step="0.5" min="0" max="100" value={maxLinePercent}
-                onChange={e => { setMaxLinePercent(e.target.value); saveMaxLine(e.target.value); }}
-                className="h-10 text-right font-bold bg-violet-50 dark:bg-violet-900/40 border-2 border-violet-300 dark:border-violet-700"
-              />
-            </div>
-          </div>
-
-          {/* Tableau money management */}
-          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="px-3 py-2 text-left border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-xs w-[30%]"></th>
-                  {PROFILES.map(p => (
-                    <th
-                      key={p.key}
-                      className={`px-3 py-3 text-center text-white font-bold border border-gray-200 dark:border-gray-700 cursor-pointer transition-all select-none ${p.headerCls} ${riskProfile === p.key ? "ring-2 ring-inset ring-white/60" : "opacity-80"}`}
-                      onClick={() => setRiskProfile(p.key)}
-                    >
-                      <div className="text-base tracking-wide">{p.fullLabel}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {/* % risque */}
-                <tr className="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-900 dark:even:bg-gray-800/40">
-                  <td className={tdLabel}>% risque</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} ${riskProfile === d.key ? "font-semibold" : "text-muted-foreground"}`}>
-                      {fmtN(d.riskPct, 2)}%
-                    </td>
-                  ))}
-                </tr>
-                {/* Risque en € */}
-                <tr className="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-900 dark:even:bg-gray-800/40">
-                  <td className={tdLabel}>Risque en €</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} ${riskProfile === d.key ? "font-semibold" : "text-muted-foreground"}`}>
-                      {cap > 0 ? fmtN(d.riskEur, 0) + " €" : "–"}
-                    </td>
-                  ))}
-                </tr>
-                {/* Achat - fond bleu */}
-                <tr className="bg-blue-100 dark:bg-blue-900/30">
-                  <td className={`${tdLabel} bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300`}>Achat</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 ${riskProfile === d.key ? "font-bold" : ""}`}>
-                      {buy > 0 ? fmtN(buy, 2) + " €" : "–"}
-                    </td>
-                  ))}
-                </tr>
-                {/* Stop loss - fond marron/ambre */}
-                <tr style={{ backgroundColor: "rgba(180,120,60,0.15)" }}>
-                  <td className={tdLabel} style={{ color: "#92400e" }}>Stop loss</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} ${riskProfile === d.key ? "font-bold" : ""}`} style={{ color: "#92400e" }}>
-                      {stop > 0 ? fmtN(stop, 2) + " €" : "–"}
-                    </td>
-                  ))}
-                </tr>
-                {/* Nombre de titres */}
-                <tr className="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-900 dark:even:bg-gray-800/40">
-                  <td className={tdLabel}>Nombre de titres</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} ${riskProfile === d.key ? "font-bold text-base" : "text-muted-foreground"}`}>
-                      {d.nbTitres > 0 ? d.nbTitres : "–"}
-                    </td>
-                  ))}
-                </tr>
-                {/* Poids ligne */}
-                <tr className="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-900 dark:even:bg-gray-800/40">
-                  <td className={tdLabel}>Poids ligne</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} ${riskProfile === d.key ? "font-semibold" : "text-muted-foreground"}`}>
-                      {d.nbTitres > 0 && buy > 0 ? fmtN(d.nbTitres * buy, 0) + " €" : "–"}
-                    </td>
-                  ))}
-                </tr>
-                {/* % du Capital engagé */}
-                <tr className="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-900 dark:even:bg-gray-800/40">
-                  <td className={tdLabel}>% du Capital engagé</td>
-                  {tableData.map(d => (
-                    <td key={d.key} className={`${tdBase} ${riskProfile === d.key ? "font-semibold" : "text-muted-foreground"}`}>
-                      {d.nbTitres > 0 && buy > 0 && cap > 0 ? fmtN((d.nbTitres * buy / cap) * 100, 1) + "%" : "–"}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Légende profil actif */}
-          <div className="mt-3 text-xs text-muted-foreground text-center">
-            Cliquez sur une colonne pour sélectionner le profil actif dans la calculette
           </div>
         </CardContent>
       </Card>
