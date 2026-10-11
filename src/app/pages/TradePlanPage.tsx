@@ -7,7 +7,7 @@ import { MoreHorizontal, RefreshCw, PlusCircle, Search, X, ChevronUp, ChevronDow
 import { Input } from "../components/ui/input";
 import { SwingPlanEntry, SwingPlanDialog } from "../components/SwingPlanDialog";
 import { LTPlanEntry, LTPlanDialog } from "../components/LTPlanDialog";
-import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss, getLTPlans, addLTPlan, updateLTPlan, deleteLTPlan } from "../db";
+import { getSwingPlans, addSwingPlan, updateSwingPlan, updateSwingPlanStatus, updateSwingPlanNotes, deleteSwingPlan, updatePositionStopLoss, getLTPlans, addLTPlan, updateLTPlan, updateLTPlanPurchasedZone, deleteLTPlan } from "../db";
 import { TransactionDialog } from "../components/TransactionDialog";
 import { usePortfolio } from "../components/PortfolioLayout";
 import { TabNav } from "../components/TabNav";
@@ -444,6 +444,7 @@ function SwingPlanTab() {
 
 function zoneGap(plan: LTPlanEntry, price: number | null): { pct: number | null; inZone: number | null } {
   if (price == null) return { pct: null, inZone: null };
+  const startFromZone = (plan.purchasedZone ?? 0) + 1;
   let bestGap: number | null = null;
   const zones: [number, number | null, number | null][] = [
     [1, plan.buyZone1Low, plan.buyZone1High],
@@ -451,6 +452,7 @@ function zoneGap(plan: LTPlanEntry, price: number | null): { pct: number | null;
     [3, plan.buyZone3Low, plan.buyZone3High],
   ];
   for (const [zoneNum, z1, z2] of zones) {
+    if (zoneNum < startFromZone) continue;
     const vals = [z1, z2].filter((v): v is number => v != null);
     if (vals.length === 0) continue;
     const haute = Math.max(...vals);
@@ -642,15 +644,19 @@ function LTPlanTab() {
                   const vals = [low, high].filter((v): v is number => v != null);
                   const top    = vals.length ? Math.max(...vals) : null;
                   const bottom = vals.length > 1 ? Math.min(...vals) : null;
+                  const purchased = (plan.purchasedZone ?? 0) >= (i + 1);
                   return (
                     <TableCell key={i} className="text-right whitespace-nowrap">
+                      {purchased && (
+                        <div className="text-[10px] font-semibold text-emerald-600 mb-0.5">✓ acheté</div>
+                      )}
                       {top != null ? (
-                        <div className="text-xs text-muted-foreground">
+                        <div className={`text-xs ${purchased ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
                           {fmtNum(top)}{bottom != null ? ` – ${fmtNum(bottom)}` : ""}
                         </div>
                       ) : null}
                       {target != null
-                        ? <div className="font-medium text-sky-600">{fmtNum(target)}</div>
+                        ? <div className={`font-medium ${purchased ? "text-muted-foreground/50" : "text-sky-600"}`}>{fmtNum(target)}</div>
                         : (top == null ? <div>—</div> : null)
                       }
                     </TableCell>
@@ -700,6 +706,36 @@ function LTPlanTab() {
                       <DropdownMenuItem onClick={() => { setEditPlan(plan); setEditDialogOpen(true); }}>
                         Modifier
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {(() => {
+                        const purchased = plan.purchasedZone ?? 0;
+                        const nextZone = purchased + 1;
+                        const hasNextZone = nextZone <= 3 && (() => {
+                          if (nextZone === 1) return plan.buyZone1Low != null || plan.buyZone1High != null;
+                          if (nextZone === 2) return plan.buyZone2Low != null || plan.buyZone2High != null;
+                          return plan.buyZone3Low != null || plan.buyZone3High != null;
+                        })();
+                        return (
+                          <>
+                            {hasNextZone && (
+                              <DropdownMenuItem onClick={async () => {
+                                await updateLTPlanPurchasedZone(plan.id!, nextZone);
+                                setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, purchasedZone: nextZone } : p));
+                              }}>
+                                Valider achat Zone {nextZone}
+                              </DropdownMenuItem>
+                            )}
+                            {purchased > 0 && (
+                              <DropdownMenuItem onClick={async () => {
+                                await updateLTPlanPurchasedZone(plan.id!, purchased - 1);
+                                setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, purchasedZone: purchased - 1 } : p));
+                              }}>
+                                Annuler Zone {purchased}
+                              </DropdownMenuItem>
+                            )}
+                          </>
+                        );
+                      })()}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(plan.id!)}>
                         Supprimer

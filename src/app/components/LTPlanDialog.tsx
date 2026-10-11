@@ -24,6 +24,7 @@ export interface LTPlanEntry {
   buyZone3High: number | null;
   buyZone3Target: number | null;
   closePrice: number | null;
+  purchasedZone?: number | null; // 0 = aucune, 1 = zone1 achetée, 2 = zones 1+2, 3 = toutes
 }
 
 interface LTPlanDialogProps {

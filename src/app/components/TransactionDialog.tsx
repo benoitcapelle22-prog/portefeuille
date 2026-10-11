@@ -9,25 +9,21 @@ import { Transaction } from "./TransactionForm";
 import { Loader2 } from "lucide-react";
 import { useExchangeRates } from "../hooks/useExchangeRates";
 import { toast } from "sonner";
-
-const SECTORS = [
-  "Finance", "Technology", "Santé", "Énergie", "Industrie",
-  "Consommation", "Immobilier", "Matériaux", "Services publics", "Télécommunications", "Autre",
-];
+import { SECTORS } from "./CurrentPositions";
 
 export const SECTOR_MAP: Record<string, string> = {
-  "Technology": "Technology", "Information Technology": "Technology",
-  "Financial Services": "Finance", "Finance": "Finance", "Banking": "Finance", "Insurance": "Finance",
+  "Technology": "Tech", "Information Technology": "Tech",
+  "Financial Services": "Finances", "Finance": "Finances", "Banking": "Finances", "Insurance": "Finances",
   "Healthcare": "Santé", "Health Care": "Santé", "Biotechnology": "Santé", "Pharmaceuticals": "Santé",
-  "Energy": "Énergie", "Oil & Gas": "Énergie",
+  "Energy": "Energie", "Oil & Gas": "Energie",
   "Industrials": "Industrie", "Industrial": "Industrie", "Aerospace & Defense": "Industrie", "Manufacturing": "Industrie",
-  "Consumer Cyclical": "Consommation", "Consumer Defensive": "Consommation", "Consumer Staples": "Consommation",
-  "Consumer Discretionary": "Consommation", "Retail": "Consommation",
+  "Consumer Cyclical": "Conso discrétionnaire (cyclique)", "Consumer Discretionary": "Conso discrétionnaire (cyclique)", "Retail": "Conso discrétionnaire (cyclique)",
+  "Consumer Defensive": "Conso de base (non cyclique)", "Consumer Staples": "Conso de base (non cyclique)",
   "Real Estate": "Immobilier",
   "Basic Materials": "Matériaux", "Materials": "Matériaux", "Chemicals": "Matériaux", "Mining": "Matériaux",
-  "Utilities": "Services publics",
-  "Communication Services": "Télécommunications", "Telecommunications": "Télécommunications",
-  "Telecom": "Télécommunications", "Media": "Télécommunications",
+  "Utilities": "Services aux collectivités",
+  "Communication Services": "Services de communication", "Telecommunications": "Services de communication",
+  "Telecom": "Services de communication", "Media": "Services de communication",
 };
 
 type Currency = "EUR" | "USD" | "GBP" | "GBX" | "CHF" | "JPY" | "CAD" | "DKK" | "SEK";

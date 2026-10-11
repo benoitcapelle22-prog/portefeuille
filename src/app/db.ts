@@ -539,6 +539,7 @@ function mapLTPlan(row: any): LTPlanEntry {
     buyZone3High: n(row.buy_zone_3_high),
     buyZone3Target: n(row.buy_zone_3_target),
     closePrice: n(row.close_price),
+    purchasedZone: row.purchased_zone != null ? Number(row.purchased_zone) : 0,
   };
 }
 
@@ -565,6 +566,7 @@ export async function addLTPlan(plan: LTPlanEntry): Promise<void> {
     buy_zone_3_high: plan.buyZone3High ?? null,
     buy_zone_3_target: plan.buyZone3Target ?? null,
     close_price: plan.closePrice ?? null,
+    purchased_zone: plan.purchasedZone ?? 0,
   });
   if (error) throw error;
 }
@@ -585,7 +587,13 @@ export async function updateLTPlan(plan: LTPlanEntry): Promise<void> {
     buy_zone_3_high: plan.buyZone3High ?? null,
     buy_zone_3_target: plan.buyZone3Target ?? null,
     close_price: plan.closePrice ?? null,
+    purchased_zone: plan.purchasedZone ?? 0,
   }).eq('id', plan.id!);
+  if (error) throw error;
+}
+
+export async function updateLTPlanPurchasedZone(id: string, purchasedZone: number): Promise<void> {
+  const { error } = await supabase.from('lt_plans').update({ purchased_zone: purchasedZone }).eq('id', id);
   if (error) throw error;
 }
 
