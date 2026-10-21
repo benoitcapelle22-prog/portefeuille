@@ -863,6 +863,7 @@ export function CurrentPositions({
                     </div>
                     <div className="text-xs text-muted-foreground">{formatPercent(totalLatentGainLossPercent)}</div>
                   </TableCell>
+                  {hasRealizedCol && <TableCell />}
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell></TableCell>
@@ -969,6 +970,7 @@ export function CurrentPositions({
                     </TableCell>
                   )}
                   <TableCell className="text-right">-</TableCell>
+                  {hasRealizedCol && <TableCell />}
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell className="text-right">-</TableCell>
@@ -988,6 +990,7 @@ export function CurrentPositions({
                     <TableCell className="text-right text-sm text-green-600">100%</TableCell>
                   )}
                   <TableCell className="text-right"></TableCell>
+                  {hasRealizedCol && <TableCell />}
                   {portfolioCategory === "Trading" && (
                     <>
                       <TableCell className="text-right"></TableCell>
@@ -1010,6 +1013,7 @@ export function CurrentPositions({
                     </TableCell>
                     {portfolioCategory === "LT" && <TableCell />}
                     <TableCell className="text-right"></TableCell>
+                    {hasRealizedCol && <TableCell />}
                     {portfolioCategory === "Trading" && (
                       <>
                         <TableCell className="text-right"></TableCell>
@@ -1032,6 +1036,7 @@ export function CurrentPositions({
                       <TableCell className="text-right"></TableCell>{/* Cours actuel */}
                       <TableCell className="text-right"></TableCell>{/* Valeur actuelle */}
                       <TableCell className="text-right"></TableCell>{/* +/- Value latente */}
+                      {hasRealizedCol && <TableCell />}
                       <TableCell className="text-right text-xs">
                         <div className="text-muted-foreground">Max autorisé</div>
                         <div className={`font-semibold ${isOverLimit ? "text-negative" : "text-muted-foreground"}`}>
