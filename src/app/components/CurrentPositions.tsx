@@ -36,6 +36,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Transaction } from "./TransactionForm";
+import { ClosedPosition } from "./ClosedPositions";
 import { useExchangeRates } from "../hooks/useExchangeRates";
 import {
   Dialog,
@@ -47,6 +48,7 @@ import {
   DialogTrigger,
 } from "./ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { useQuotes } from "../hooks/useQuotes";
 import { useHistoricalPrices } from "../hooks/useHistoricalPrices";
 import { fetchAndSavePricesForDate } from "../../services/pricesHistory";
@@ -106,6 +108,7 @@ interface CurrentPositionsProps {
   onNewTransaction?: () => void;
   quotesBySymbol?: Record<string, { price: number | null }>;
   maxRiskPercent?: number;
+  closedPositions?: ClosedPosition[];
 }
 
 function PriceInput({
@@ -161,6 +164,7 @@ export function CurrentPositions({
   onNewTransaction,
   quotesBySymbol: quotesBySymbolProp,
   maxRiskPercent,
+  closedPositions,
 }: CurrentPositionsProps) {
   const [searchFilter, setSearchFilter] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -463,6 +467,28 @@ export function CurrentPositions({
     return { totalValueConverted, totalValueRaw, latentGainLossConverted, latentGainLossPercentConverted };
   };
 
+  const realizedDataByCode = useMemo(() => {
+    const map: Record<string, { gainLoss: number; dividends: number }> = {};
+    // PV/MV réalisées depuis les positions clôturées
+    if (closedPositions) {
+      for (const cp of closedPositions) {
+        const key = cp.code.toUpperCase();
+        if (!map[key]) map[key] = { gainLoss: 0, dividends: 0 };
+        map[key].gainLoss += cp.gainLoss;
+      }
+    }
+    // Dividendes depuis les transactions (source unique — cp.dividends est dérivé des mêmes transactions)
+    if (transactions) {
+      for (const t of transactions) {
+        if (t.type !== "dividende" || !t.code) continue;
+        const key = t.code.toUpperCase();
+        if (!map[key]) map[key] = { gainLoss: 0, dividends: 0 };
+        map[key].dividends += (t.unitPrice * t.quantity) * (t.conversionRate || 1) - (t.tax || 0);
+      }
+    }
+    return map;
+  }, [closedPositions, transactions]);
+
   const totalInvested = filteredPositions.reduce((sum, pos) => sum + pos.totalCost, 0);
   const totalValue = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).totalValueConverted || 0), 0);
   const totalLatentGainLoss = filteredPositions.reduce((sum, pos) => sum + (getPositionEurValues(pos).latentGainLossConverted || 0), 0);
@@ -505,13 +531,16 @@ export function CurrentPositions({
     + (showSector ? 1 : 0)
     + (showCurrency ? 1 : 0);
 
+  const hasRealizedCol = closedPositions !== undefined;
+
   const totalColumnCount =
     9
     + (hasPortfolioCodeColumn ? 1 : 0)
     + (showSector ? 1 : 0)
     + (showCurrency ? 1 : 0)
     + (portfolioCategory === "Trading" ? 2 : 0)
-    + (portfolioCategory === "LT" ? 1 : 0);
+    + (portfolioCategory === "LT" ? 1 : 0)
+    + (hasRealizedCol ? 1 : 0);
 
   return (
     <Card>
@@ -611,6 +640,11 @@ export function CurrentPositions({
                   <Th col="latentGainLoss" className="text-right w-20">
                     <span className="leading-tight">+/- Value<br />latente</span>
                   </Th>
+                  {hasRealizedCol && (
+                    <TableHead className="text-right w-24">
+                      <span className="leading-tight">Gains<br />réalisés</span>
+                    </TableHead>
+                  )}
                   {portfolioCategory === "Trading" && (
                     <>
                       <Th col="stopLoss" className="text-right w-32">Stop Loss</Th>
@@ -727,6 +761,44 @@ export function CurrentPositions({
                         </div>
                         <div className="text-xs text-muted-foreground">{formatPercent(latentPct)}</div>
                       </TableCell>
+
+                      {/* Gains réalisés (PV/MV + dividendes) depuis l'origine */}
+                      {hasRealizedCol && (() => {
+                        const data = realizedDataByCode[(position.code || "").toUpperCase()];
+                        if (!data) return <TableCell className="text-right text-muted-foreground">—</TableCell>;
+                        const total = data.gainLoss + data.dividends;
+                        return (
+                          <TableCell className="text-right whitespace-nowrap">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className={`cursor-default ${total >= 0 ? "text-positive" : "text-negative"}`}>
+                                  {formatCurrency(total, portfolioCurrency)}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="text-xs space-y-1 min-w-[160px]">
+                                <div className="flex justify-between gap-4">
+                                  <span>PV/MV réalisée</span>
+                                  <span className={data.gainLoss >= 0 ? "text-green-300" : "text-red-300"}>
+                                    {formatCurrency(data.gainLoss, portfolioCurrency)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                  <span>Dividendes</span>
+                                  <span className="text-green-300">
+                                    {formatCurrency(data.dividends, portfolioCurrency)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between gap-4 border-t border-white/20 pt-1 font-semibold">
+                                  <span>Total</span>
+                                  <span className={total >= 0 ? "text-green-300" : "text-red-300"}>
+                                    {formatCurrency(total, portfolioCurrency)}
+                                  </span>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                        );
+                      })()}
 
                       {portfolioCategory === "Trading" && (
                         <>

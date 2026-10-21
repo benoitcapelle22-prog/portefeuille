@@ -79,6 +79,7 @@ export function TransactionsPage() {
           portfolioId={currentPortfolioId || undefined}
           quotesBySymbol={quotesBySymbol}
           maxRiskPercent={currentPortfolio?.maxRiskPercent}
+          closedPositions={currentData.closedPositions}
           onNewTransaction={() => { setDialogInitialData({}); setDialogOpen(true); }}
         />
       </div>
