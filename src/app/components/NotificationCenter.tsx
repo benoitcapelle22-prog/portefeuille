@@ -86,6 +86,7 @@ export function NotificationCenter() {
       ];
 
       for (const [zoneNum, z1, z2, cible] of zones) {
+        if (zoneNum <= (plan.purchasedZone ?? 0)) continue;
         if (z1 == null && z2 == null && cible == null) continue;
 
         // Bornes effectives indépendamment de l'ordre de saisie
